@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       binja_api_tag:
-        description: 'Binary Ninja API tag (e.g., dev, personal, stable/4.2.6610)'
+        description: 'Binary Ninja API tag (e.g., dev, personal, stable/5.2.8614)'
         required: true
         default: 'dev'
   
