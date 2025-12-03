@@ -1,7 +1,7 @@
 # .github/workflows/build.yml
 name: Build Plugin
 
-# This workflow was generated with the help of Claude.
+# This workflow was generated with the help of Claude
 
 on:
   # Manual trigger with version input
@@ -17,7 +17,6 @@ on:
     - cron: '0 0 * * *'
 
 env:
-  # Change this for each plugin repo (e.g., bn-v850-arch, bn-superh-arch)
   REPO_NAME: bn-v850-arch
 
 jobs:
@@ -148,7 +147,7 @@ jobs:
         shell: bash
         run: |
           cd binaryninja-api
-          cmake -DCMAKE_BUILD_TYPE=Release -DHEADLESS=yes -B build .
+          cmake -DCMAKE_BUILD_TYPE=Release -DHEADLESS=yes -DBN_API_BUILD_EXAMPLES=OFF -DBN_GENERATE_STUBS=ON -B build .
           cmake --build build --config Release --target ${{ env.REPO_NAME }} -j4
       
       - name: Prepare artifact
