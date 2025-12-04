@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.15.0 FATAL_ERROR)
 
-project(v850 CXX)
+project(bn-v850-arch CXX)
 
 add_library(${PROJECT_NAME} SHARED
         src/architecture.cpp
