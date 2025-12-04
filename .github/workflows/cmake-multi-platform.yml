@@ -91,7 +91,7 @@ jobs:
             ext: dylib
             lib_prefix: lib
             platform: macos_arm64
-          - os: macos-13
+          - os: macos-15-intel
             ext: dylib
             lib_prefix: lib
             platform: macos_amd64
