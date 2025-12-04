@@ -156,8 +156,10 @@ jobs:
         run: |
           mkdir -p artifacts
           
-          # Find and copy the built library (location varies by OS)
+          # Find and copy the built library (location varies by OS and build system)
           if [ "${{ runner.os }}" = "Windows" ]; then
+            # Windows/MSVC puts output in plugins subdirectory
+            cp binaryninja-api/build/plugins/${{ env.REPO_NAME }}/Release/${{ matrix.lib_prefix }}${{ env.REPO_NAME }}.${{ matrix.ext }} artifacts/ || \
             cp binaryninja-api/build/out/bin/Release/${{ matrix.lib_prefix }}${{ env.REPO_NAME }}.${{ matrix.ext }} artifacts/ || \
             cp binaryninja-api/build/out/bin/${{ matrix.lib_prefix }}${{ env.REPO_NAME }}.${{ matrix.ext }} artifacts/
           else
