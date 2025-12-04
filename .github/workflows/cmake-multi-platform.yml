@@ -112,6 +112,7 @@ jobs:
           repository: Vector35/binaryninja-api
           ref: ${{ needs.check-for-new-release.outputs.latest_tag }}
           path: binaryninja-api
+          submodules: recursive
       
       - name: Set up build environment (Linux)
         if: runner.os == 'Linux'
@@ -147,7 +148,7 @@ jobs:
         shell: bash
         run: |
           cd binaryninja-api
-          cmake -DCMAKE_BUILD_TYPE=Release -DHEADLESS=yes -DBN_API_BUILD_EXAMPLES=OFF -DBN_GENERATE_STUBS=ON -B build .
+          cmake -DCMAKE_BUILD_TYPE=Release -DHEADLESS=yes -DBN_ALLOW_STUBS=yes -B build .
           cmake --build build --config Release --target ${{ env.REPO_NAME }} -j4
       
       - name: Prepare artifact
