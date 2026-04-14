@@ -53,6 +53,15 @@ class V850E1Architecture final : public V850Architecture {
   std::string GetFlagWriteTypeName(uint32_t flags) override;
   std::vector<uint32_t> GetFlagsRequiredForFlagCondition(
       BNLowLevelILFlagCondition cond, uint32_t semClass) override;
+
+  /* Intrinsic scaffolding for FPU operations that have no native BN LLIL
+     primitive (max/min/recip/rsqrt/FMA/half-precision/FP compare etc.).
+     See instructions.h FpuIntrinsic:: for the ID list. */
+  std::string GetIntrinsicName(uint32_t intrinsic) override;
+  std::vector<uint32_t> GetAllIntrinsics() override;
+  std::vector<BN::NameAndType> GetIntrinsicInputs(uint32_t intrinsic) override;
+  std::vector<BN::Confidence<BN::Ref<BN::Type>>> GetIntrinsicOutputs(
+      uint32_t intrinsic) override;
 };
 
 }  // namespace V850

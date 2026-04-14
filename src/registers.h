@@ -86,10 +86,45 @@ constexpr uint32_t V850_REG_BPDM = 27;  // Breakpoint data mask registers
 // system registers 28-31 are reserved
 
 /* -------------------------------- *
+ *      Banked System Registers     *
+ * -------------------------------- *
+ * RH850 G3MH (V850E3v5) extends the V850 system register file with banked
+ * sets addressed by (regID, selID). Each of the 32 regIDs may exist in up
+ * to 32 banks selected by selID. The V850 base bank is selID = 0.
+ *
+ * We encode a banked system register as a flat register "handle":
+ *     handle = SYSTEM_REG_BASE | (selID << 8) | (regID << 2)
+ *
+ * For selID = 0, this matches the legacy encoding (SYSTEM_REG_BASE +
+ * regID * 4) that was previously emitted as a ConstPointer for memory-
+ * backed system register loads/stores. Banked handles (selID > 0) occupy
+ * unique addresses above the base bank and never collide with GPRs
+ * (0..31) or with the float registers at 0xFFF10000. */
+constexpr uint32_t SYSREG_HANDLE_STRIDE = 0x100;  // one bank of 32 regs
+inline constexpr uint32_t SysregHandle(uint8_t regID, uint8_t selID) {
+  return SYSTEM_REG_BASE | (static_cast<uint32_t>(selID) << 8) |
+         (static_cast<uint32_t>(regID) << 2);
+}
+inline constexpr bool IsSysregHandle(uint32_t rid) {
+  return (rid >= SYSTEM_REG_BASE) && (rid < 0xFFF10000);
+}
+inline constexpr uint8_t SysregHandleRegID(uint32_t rid) {
+  return static_cast<uint8_t>((rid >> 2) & 0x1F);
+}
+inline constexpr uint8_t SysregHandleSelID(uint32_t rid) {
+  return static_cast<uint8_t>((rid >> 8) & 0x1F);
+}
+
+/* -------------------------------- *
  *          Float Registers         *
  * -------------------------------- */
 constexpr uint32_t V850_REG_FLOAT_EFG = 0xFFF10000;
 constexpr uint32_t V850_REG_FLOAT_ECT = 0xFFF10004;
+// Floating-point status register (RH850 FPSR). CC(7:0) bits live in bits
+// 31..24 and are referenced by CMPF.S / CMOVF.S / TRFSR. Use a distinct
+// small ID so it appears as a proper BN register in GetAllRegisters.
+constexpr uint32_t V850_REG_FPSR = 0xFFF10008;
+constexpr uint8_t FPSR = 64;  // pseudo-register slot for FPSR CC bits
 }  // namespace V850::Registers
 
 #endif  // BINARYNINJA_API_V850_REGISTERS_H

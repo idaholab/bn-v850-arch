@@ -276,6 +276,16 @@ constexpr uint8_t SHIFT_SUBOP_BITS_17_18 = 1;
 constexpr uint8_t MASK_SUBOP_BIT_17 = 0b10;
 constexpr uint8_t SHIFT_SUBOP_BIT_17 = 1;
 
+// BINS (bitfield insert) field masks (G3MH p.162). Share Format IX slot.
+constexpr uint16_t MASK_IX_SUBOP_BINS = 0b0000011111100000;
+constexpr uint8_t SHIFT_IX_SUBOP_BINS = 5;
+constexpr uint16_t MASK_IX_BINS_MMMM = 0b1111000000000000;
+constexpr uint8_t SHIFT_IX_BINS_MMMM = 12;
+constexpr uint16_t MASK_IX_BINS_K = 0b0000100000000000;
+constexpr uint8_t SHIFT_IX_BINS_K = 11;
+constexpr uint16_t MASK_IX_BINS_LLL = 0b0000000000001110;
+constexpr uint8_t SHIFT_IX_BINS_LLL = 1;
+
 /* --------------------------- *
  *    FORMAT X: Field Masks    *
  *    ** Note: is 32-bit       *
@@ -376,6 +386,15 @@ constexpr uint8_t OP_I_6BIT_ADD = 0b001110;
 constexpr uint8_t OP_I_6BIT_CMP = 0b001111;
 // Dbtrap opcode defined by this *exact* 16-bit value
 constexpr uint16_t EXACT_OP_I_DBTRAP = 0b1111100001000000;
+
+// Synchronize-family instructions: Format I, exact 16-bit encodings.
+// Per G3MH Software Manual Section 7.2, pp. 287-290 (SYNCE/SYNCI/SYNCM/SYNCP).
+// All four are defined as pipeline/memory/instruction barriers; SYNCE is
+// explicitly handled as NOP on this CPU (p. 287).
+constexpr uint16_t EXACT_OP_I_SYNCI = 0b0000000000011100;  // 0x001C
+constexpr uint16_t EXACT_OP_I_SYNCE = 0b0000000000011101;  // 0x001D
+constexpr uint16_t EXACT_OP_I_SYNCM = 0b0000000000011110;  // 0x001E
+constexpr uint16_t EXACT_OP_I_SYNCP = 0b0000000000011111;  // 0x001F
 
 /* ------------------------ */
 /* FORMAT II: 6-bit opcodes */
@@ -541,6 +560,12 @@ constexpr uint8_t SUBOP_XII_MULU = 0b10;
 constexpr uint8_t SUBOP_XII_BSW = 0b000;
 constexpr uint8_t SUBOP_XII_BSH = 0b010;
 constexpr uint8_t SUBOP_XII_HSW = 0b100;
+
+/* Format IX: BINS (bitfield insert) -- sub-opcode constants */
+// Sub-opcode values live in bits 5..10 of word 2 (G3MH p.162).
+constexpr uint8_t SUBOP_IX_BINS_HI = 0b001001;  // msb >= 16, lsb >= 16
+constexpr uint8_t SUBOP_IX_BINS_MID = 0b001011; // msb >= 16, lsb <  16
+constexpr uint8_t SUBOP_IX_BINS_LO = 0b001101;  // msb <  16, lsb <  16
 
 /* Format XIII */
 // 5-bit opcode is bits 6-10 of word 1

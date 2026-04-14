@@ -485,6 +485,18 @@ class BswR2R3 : public Instruction {
             BinaryNinja::Architecture *arch) override;
 };
 
+class BinsR1PosWidthR2 : public Instruction {
+ public:
+  explicit BinsR1PosWidthR2(const IsaType &t, uint8_t len);
+
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
 class Bv : public Instruction {
  public:
   explicit Bv(const IsaType &t, uint8_t len);
@@ -635,6 +647,28 @@ class Dbret : public Instruction {
 class Dbtrap : public Instruction {
  public:
   explicit Dbtrap(const IsaType &t, uint8_t len);
+
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// Format I synchronization instructions: SYNCE, SYNCI, SYNCM, SYNCP.
+// All four share the same 16-bit Format I shape (differ only by low 5 bits)
+// and lower to architectural barriers with no observable register effect on
+// this CPU (G3MH Software Manual pp. 287-290). Represented as a single class
+// carrying the decoded mnemonic for rendering; lift emits an intrinsic so the
+// decompiler preserves the barrier.
+class SyncBarrier : public Instruction {
+  const char *mnemonic;
+  const char *intrinsic;
+
+ public:
+  explicit SyncBarrier(const IsaType &t, uint8_t len, const char *mnemonic,
+                       const char *intrinsic);
 
   bool Text(uint64_t opcode, uint64_t addr, size_t &len,
             std::vector<BN::InstructionTextToken> &result) override;
@@ -1040,6 +1074,35 @@ class MuluR1R2R3 : public Instruction {
             BinaryNinja::Architecture *arch) override;
 };
 
+// MAC reg1, reg2, reg3, reg4 (Format XI, V850E2/E3)
+// GR[reg4+1] || GR[reg4] <- GR[reg2] * GR[reg1] + GR[reg3+1] || GR[reg3]
+// G3MH Software Manual p. 215
+class MacR1R2R3R4 : public Instruction {
+ public:
+  explicit MacR1R2R3R4(const IsaType &t, uint8_t len);
+
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// MACU reg1, reg2, reg3, reg4 (Format XI, V850E2/E3)
+// G3MH Software Manual p. 216
+class MacuR1R2R3R4 : public Instruction {
+ public:
+  explicit MacuR1R2R3R4(const IsaType &t, uint8_t len);
+
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
 class Nop : public Instruction {
  public:
   explicit Nop(const IsaType &t, uint8_t len);
@@ -1182,6 +1245,34 @@ class Reti : public Instruction {
   bool Text(uint64_t opcode, uint64_t addr, size_t &len,
             std::vector<BN::InstructionTextToken> &result) override;
 
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// V850E3/RH850 G3MH split RETI into EIRET (return from EI-level exception)
+// and FERET (return from FE-level exception / NMI). Encodings:
+//   EIRET = 0x07E0 0148  -> pc <- EIPC,  PSW <- EIPSW
+//   FERET = 0x07E0 014A  -> pc <- FEPC,  PSW <- FEPSW
+class Eiret : public Instruction {
+ public:
+  explicit Eiret(const IsaType &t, uint8_t len);
+  bool Info(uint64_t opcode, uint64_t addr,
+            BN::InstructionInfo &result) override;
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+class Feret : public Instruction {
+ public:
+  explicit Feret(const IsaType &t, uint8_t len);
+  bool Info(uint64_t opcode, uint64_t addr,
+            BN::InstructionInfo &result) override;
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
   bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
             BN::LowLevelILFunction &il,
             BinaryNinja::Architecture *arch) override;
@@ -1672,6 +1763,221 @@ class ZxhR1 : public Instruction {
             BN::LowLevelILFunction &il,
             BinaryNinja::Architecture *arch) override;
 };
+
+/* -----------------------------------------------------------------
+ * V850E3 / RH850 G3MH additions (decoder-gap fills)
+ * ----------------------------------------------------------------- */
+
+// PUSHSP rh-rt (Format XI, G3MH p.237)
+class PushspRhRt : public Instruction {
+ public:
+  explicit PushspRhRt(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+/* ==========================================================================
+ * V850E3 / RH850 single-precision FPU instructions (Format F:I).
+ *
+ * Every single-precision FPU instruction in the manual has:
+ *   HW1 bits 10..5 == 0b111111 (same extended-opcode prefix)
+ *   HW2 bit 10     == 1          (category = 0b100 -- floating point)
+ *
+ * Disambiguation is performed in ParseFpuSingle() by (type, sub-op, R).
+ * References (RH850G3MH Software Manual R01US0143EJ0130):
+ *   ADDF.S  p.319   SUBF.S  p.391   MULF.S  p.373
+ *   DIVF.S  p.348   MAXF.S  p.366   MINF.S  p.370
+ *   ABSF.S  p.315   NEGF.S  p.378   SQRTF.S p.389
+ *   RECIPF.S p.381  RSQRTF.S p.385
+ *   FLOORF.SW/SUW p.357    CEILF.SW/SUW  p.327
+ *   TRNCF.SW/SUW  p.395    CVTF.SW/SUW   p.341
+ *   CVTF.WS/UWS   p.345    CVTF.SH/HS    p.339
+ *   ROUNDF.SW/SUW (RH850 G3KH only)
+ *   CMPF.S  p.335   CMOVF.S p.330   TRFSR p.399
+ *   FMAF.S  p.351   FMSF.S  p.353   FNMAF.S p.355  FNMSF.S p.357
+ * ==========================================================================*/
+enum class FpuOp : uint8_t {
+  // arithmetic (type=01, three-operand)
+  AddfS, SubfS, MulfS, DivfS, MaxfS, MinfS,
+  // unary (type=01)
+  AbsfS, NegfS, SqrtfS, RecipfS, RsqrtfS,
+  // round/cast unary (type=01)
+  RoundfSw, TrncfSw, CeilfSw, FloorfSw, CvtfSw,
+  RoundfSuw, TrncfSuw, CeilfSuw, FloorfSuw, CvtfSuw,
+  CvtfWs, CvtfHs, CvtfSh, CvtfUws,
+  // FMA (type=11)
+  FmafS, FmsfS, FnmafS, FnmsfS,
+  // compare/move/transfer (type=00 or 01, special)
+  CmpfS, CmovfS, Trfsr,
+};
+
+class FpuSingle : public Instruction {
+  FpuOp op;
+
+ public:
+  explicit FpuSingle(const IsaType &t, uint8_t len, FpuOp op);
+
+  [[nodiscard]] FpuOp GetOp() const { return op; }
+
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// POPSP rh-rt (Format XI, G3MH p.232)
+class PopspRhRt : public Instruction {
+ public:
+  explicit PopspRhRt(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// CAXI [reg1], reg2, reg3 (Format XI, G3MH p.167)
+class CaxiR1R2R3 : public Instruction {
+ public:
+  explicit CaxiR1R2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// JARL [reg1], reg3 (Format XI form, G3MH p.197)
+class JarlR1R3 : public Instruction {
+ public:
+  explicit JarlR1R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Info(uint64_t opcode, uint64_t addr,
+            BN::InstructionInfo &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// SNOOZE (Format X, G3MH p.268)
+class Snooze : public Instruction {
+ public:
+  explicit Snooze(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// RIE (Format I 16-bit, G3MH p.239)
+class RieI : public Instruction {
+ public:
+  explicit RieI(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Info(uint64_t opcode, uint64_t addr,
+            BN::InstructionInfo &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// RIE imm5, imm4 (Format X 32-bit, G3MH p.239)
+class RieX : public Instruction {
+ public:
+  explicit RieX(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Info(uint64_t opcode, uint64_t addr,
+            BN::InstructionInfo &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// SCH0L reg2, reg3 (G3MH p.251)
+class Sch0lR2R3 : public Instruction {
+ public:
+  explicit Sch0lR2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// SCH0R reg2, reg3 (G3MH p.252)
+class Sch0rR2R3 : public Instruction {
+ public:
+  explicit Sch0rR2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// SCH1L reg2, reg3 (G3MH p.253)
+class Sch1lR2R3 : public Instruction {
+ public:
+  explicit Sch1lR2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+// SCH1R reg2, reg3 (G3MH p.254)
+class Sch1rR2R3 : public Instruction {
+ public:
+  explicit Sch1rR2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
+/* Dispatcher for single-precision FPU ops. Called from ParsePrefix0b1 when
+   op6bit == OP_EXT_6BIT and HW2 bit 10 (category bit 2) is set. */
+std::optional<std::unique_ptr<Instruction>> ParseFpuSingle(const IsaType &t,
+                                                           uint32_t opcode);
+
+/* Intrinsic identifiers for FPU ops without a native BN LLIL primitive.
+   Wired into V850E1Architecture::GetAllIntrinsics / GetIntrinsicName /
+   GetIntrinsicInputs / GetIntrinsicOutputs. */
+namespace FpuIntrinsic {
+enum : uint32_t {
+  MaxfS = 0x1000,
+  MinfS,
+  RecipfS,
+  RsqrtfS,
+  RoundfSw,
+  RoundfSuw,
+  TrncfSuw,
+  CeilfSuw,
+  FloorfSuw,
+  CvtfSuw,
+  CvtfUws,
+  CvtfHs,
+  CvtfSh,
+  FmafS,
+  FmsfS,
+  FnmafS,
+  FnmsfS,
+  CmpfS,
+  Trfsr,
+  _END
+};
+}  // namespace FpuIntrinsic
+
 }  // namespace V850
 
 #endif  // SRC_INSTRUCTIONS_H_

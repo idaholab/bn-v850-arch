@@ -111,6 +111,8 @@ bool Format_Ext_Info(const uint64_t opcode, BN::InstructionInfo &result) {
     case Opcodes::OP_X_RETI:
     case Opcodes::OP_X_CTRET:
     case Opcodes::OP_X_DBRET:
+    case 0x0148:  // EIRET (RH850 G3MH)
+    case 0x014A:  // FERET (RH850 G3MH)
       result.AddBranch(FunctionReturn);
       result.length = Sizes::LEN32BIT;
       return true;
@@ -243,6 +245,16 @@ bool Reti::Info(const uint64_t opcode, const uint64_t addr,
   return Format_Ext_Info(opcode, result);
 }
 
+bool Eiret::Info(const uint64_t opcode, const uint64_t addr,
+                 BN::InstructionInfo &result) {
+  return Format_Ext_Info(opcode, result);
+}
+
+bool Feret::Info(const uint64_t opcode, const uint64_t addr,
+                 BN::InstructionInfo &result) {
+  return Format_Ext_Info(opcode, result);
+}
+
 bool SwitchR1::Info(const uint64_t opcode, const uint64_t addr,
                     BN::InstructionInfo &result) {
   result.AddBranch(UnresolvedBranch);
@@ -253,6 +265,27 @@ bool SwitchR1::Info(const uint64_t opcode, const uint64_t addr,
 bool Trap::Info(const uint64_t opcode, const uint64_t addr,
                 BN::InstructionInfo &result) {
   return Format_Ext_Info(opcode, result);
+}
+
+bool JarlR1R3::Info(const uint64_t opcode, const uint64_t addr,
+                    BN::InstructionInfo &result) {
+  result.AddBranch(CallDestination);
+  result.length = Sizes::LEN32BIT;
+  return true;
+}
+
+bool RieI::Info(const uint64_t opcode, const uint64_t addr,
+                BN::InstructionInfo &result) {
+  result.AddBranch(ExceptionBranch);
+  result.length = Sizes::LEN16BIT;
+  return true;
+}
+
+bool RieX::Info(const uint64_t opcode, const uint64_t addr,
+                BN::InstructionInfo &result) {
+  result.AddBranch(ExceptionBranch);
+  result.length = Sizes::LEN32BIT;
+  return true;
 }
 
 }  // end namespace V850

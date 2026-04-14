@@ -1085,6 +1085,68 @@ bool Format_Ext_Text(const uint64_t opcode, size_t &len,
     return true;
   }
 
+  // Format IX: BINS (bitfield insert). G3MH p.162. Must be handled
+  // before the generic Format X / XII switch below because sub-opcode
+  // bits collide with HALT/EI/DI whose reg fields are all zero.
+  {
+    const auto bins_subop =
+        (opcode >> 16 & OpcodeFields::MASK_IX_SUBOP_BINS) >>
+        OpcodeFields::SHIFT_IX_SUBOP_BINS;
+    const bool bins_subop_match =
+        (bins_subop == Opcodes::SUBOP_IX_BINS_HI ||
+         bins_subop == Opcodes::SUBOP_IX_BINS_MID ||
+         bins_subop == Opcodes::SUBOP_IX_BINS_LO);
+    const auto mmmm = (opcode >> 16 & OpcodeFields::MASK_IX_BINS_MMMM) >>
+                      OpcodeFields::SHIFT_IX_BINS_MMMM;
+    const auto k = (opcode >> 16 & OpcodeFields::MASK_IX_BINS_K) >>
+                   OpcodeFields::SHIFT_IX_BINS_K;
+    const auto lll = (opcode >> 16 & OpcodeFields::MASK_IX_BINS_LLL) >>
+                     OpcodeFields::SHIFT_IX_BINS_LLL;
+    if (bins_subop_match &&
+        (reg1 != 0 || reg2 != 0 || mmmm != 0 || k != 0 || lll != 0)) {
+      // msb = MMMM | (bins_subop bit 1 ? 0 : 16) ... derive per manual:
+      // variant HI  (001001): msb>=16, lsb>=16 -> msb=16|MMMM, lsb=16|(K<<3|LLL)
+      // variant MID (001011): msb>=16, lsb<16  -> msb=16|MMMM, lsb=(K<<3|LLL)
+      // variant LO  (001101): msb<16,  lsb<16  -> msb=MMMM,    lsb=(K<<3|LLL)
+      const uint8_t lsb_low = static_cast<uint8_t>((k << 3) | lll);
+      uint8_t msb = 0, lsb = 0;
+      switch (bins_subop) {
+        case Opcodes::SUBOP_IX_BINS_HI:
+          msb = static_cast<uint8_t>(16 | mmmm);
+          lsb = static_cast<uint8_t>(16 | lsb_low);
+          break;
+        case Opcodes::SUBOP_IX_BINS_MID:
+          msb = static_cast<uint8_t>(16 | mmmm);
+          lsb = lsb_low;
+          break;
+        case Opcodes::SUBOP_IX_BINS_LO:
+          msb = static_cast<uint8_t>(mmmm);
+          lsb = lsb_low;
+          break;
+        default:
+          break;
+      }
+      const uint8_t pos = lsb;
+      const uint8_t width = static_cast<uint8_t>(msb - lsb + 1);
+
+      ITEXT("bins")
+      std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg1));
+      result.emplace_back(RegisterToken, buf, reg1);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      std::snprintf(buf, sizeof(buf), "%u", pos);
+      result.emplace_back(IntegerToken, buf, pos, sizeof(pos));
+      result.emplace_back(OperandSeparatorToken, ", ");
+      std::snprintf(buf, sizeof(buf), "%u", width);
+      result.emplace_back(IntegerToken, buf, width, sizeof(width));
+      result.emplace_back(OperandSeparatorToken, ", ");
+      std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
+      result.emplace_back(RegisterToken, buf, reg2);
+
+      len = Sizes::LEN32BIT;
+      return true;
+    }
+  }
+
   // Note: not all of these are used by all instructions
   const auto reg3 = ExtractReg3OpcodeField(opcode);
 
@@ -1097,7 +1159,39 @@ bool Format_Ext_Text(const uint64_t opcode, size_t &len,
       // There aren't any instructions with 0111, so these opcodes will start
       // with 0110
       if (opcode >> 16 &
-          OpcodeFields::OPCODE_BIT_5) {  // 01101; format XII bsw, bsh, hsw
+          OpcodeFields::OPCODE_BIT_5) {  // 01101 bsw/bsh/hsw; 01111 mac/macu
+        if (opcode >> 16 & OpcodeFields::OPCODE_BIT_4) {
+          // MAC / MACU reg1, reg2, reg3, reg4 (Format XI)
+          // reg1 = bits[4:0], reg2 = bits[15:11], reg3 = bits[20:16]
+          // (must be even), reg4 = bits[31:27] (must be even)
+          // G3MH Software Manual p. 215-216
+          const auto mac_reg3 =
+              static_cast<uint8_t>(opcode >> 16 & OpcodeFields::MASK_REG1);
+          if (opcode >> 16 & OpcodeFields::OPCODE_BIT_6) {
+            ITEXT("macu")
+          } else {
+            ITEXT("mac")
+          }
+
+          std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg1));
+          result.emplace_back(RegisterToken, buf, reg1);
+          result.emplace_back(OperandSeparatorToken, ", ");
+
+          std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
+          result.emplace_back(RegisterToken, buf, reg2);
+          result.emplace_back(OperandSeparatorToken, ", ");
+
+          std::snprintf(buf, sizeof(buf), "%s", RegToStr(mac_reg3));
+          result.emplace_back(RegisterToken, buf, mac_reg3);
+          result.emplace_back(OperandSeparatorToken, ", ");
+
+          // reg3 variable already extracted as bits[31:27] = MAC reg4 field
+          std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg3));
+          result.emplace_back(RegisterToken, buf, reg3);
+
+          len = Sizes::LEN32BIT;
+          return true;
+        }
         switch (opcode >> 16 & OpcodeFields::MASK_XII_SUBOP_BSW_BSH_HSW) {
           case Opcodes::SUBOP_XII_BSW:
             // Byte swap word; for endian translation
@@ -1198,8 +1292,18 @@ bool Format_Ext_Text(const uint64_t opcode, size_t &len,
     } else {                                            // 010
       if (opcode >> 16 & OpcodeFields::OPCODE_BIT_4) {  // 0101
         if (opcode >> 16 &
-            OpcodeFields::OPCODE_BIT_5) {  // 01011; format XI div, divu
-          if (opcode >> 16 & OpcodeFields::MASK_SUBOP_BIT_17) {  // divu
+            OpcodeFields::OPCODE_BIT_5) {  // 01011; format XI div/divu/divq/divqu
+          // G3MH p. 179/183/185/187: DIV(U) = 0101100/0101100+sub1, DIVQ(U) = 0101111
+          // Bit 5 of halfword 2 (OPCODE_BIT_6) distinguishes DIVQ family from DIV family.
+          if (opcode >> 16 & OpcodeFields::OPCODE_BIT_6) {  // divq, divqu (high-speed variable-step divide)
+            if (opcode >> 16 & OpcodeFields::MASK_SUBOP_BIT_17) {  // divqu
+              // G3MH p. 185: divqu reg1, reg2, reg3; quotient -> reg2, remainder -> reg3
+              ITEXT("divqu")
+            } else {  // divq
+              // G3MH p. 183: divq reg1, reg2, reg3; quotient -> reg2, remainder -> reg3
+              ITEXT("divq")
+            }
+          } else if (opcode >> 16 & OpcodeFields::MASK_SUBOP_BIT_17) {  // divu
             // Divide word unsigned; divide reg2 by reg1, quotient in reg2 and
             // remainder in reg3 Text format: divu reg1, reg2, reg3
             ITEXT("divu")
@@ -1336,11 +1440,19 @@ bool Format_Ext_Text(const uint64_t opcode, size_t &len,
           }
         } else {  // 001010; format X reti, ctret, dbret
           switch (opcode >> 16 & OpcodeFields::MASK_SUBOP_BITS_17_18) {
-            case Opcodes::SUBOP_X_RETI:
-              // Return from trap or interrupt
-              ITEXT("reti")
+            case Opcodes::SUBOP_X_RETI: {
+              // RH850 G3MH split RETI -> EIRET/FERET (see instructions.cpp).
+              uint16_t w2 = static_cast<uint16_t>(opcode >> 16);
+              if ((w2 & 0x0A) == 0x0A) {
+                ITEXT("feret")
+              } else if (w2 & 0x08) {
+                ITEXT("eiret")
+              } else {
+                ITEXT("reti")
+              }
               len = Sizes::LEN32BIT;
               return true;
+            }
 
             case Opcodes::SUBOP_X_CTRET:
               // Return from callt
@@ -1509,19 +1621,28 @@ bool Format_Ext_Text(const uint64_t opcode, size_t &len,
         if (opcode >> 16 &
             OpcodeFields::OPCODE_BIT_5) {  // 00001; Only option is 000010; stsr
           // Store contents of system register
-          // Text format: stsr regID, reg2
+          // Text format: stsr regID, reg2, selID
+          // Encoding (G3MH p. ~195): rrrrr111111RRRRR sssss00001000000
+          //   low 16:  rrrrr = reg2, RRRRR = regID (reuses reg1 field)
+          //   high 16: sssss = selID in bits 15..11
           ITEXT("stsr")
 
-          // RegID the same field as reg1; the difference is that it identifies
-          // a system register instead
-          std::snprintf(buf, sizeof(buf), "%s", SystemRegToStr(reg1));
-          result.emplace_back(
-              PossibleAddressToken, buf,
-              (Registers::SYSTEM_REG_BASE + reg1 * Registers::REGISTER_SIZE));
+          const uint8_t sel_id = static_cast<uint8_t>((opcode >> 27) & 0x1F);
+          const uint32_t sysreg_handle =
+              Registers::SysregHandle(reg1, sel_id);
+          std::snprintf(buf, sizeof(buf), "%s",
+                        SystemRegToStrBanked(reg1, sel_id));
+          result.emplace_back(RegisterToken, buf, sysreg_handle);
           result.emplace_back(OperandSeparatorToken, ", ");
 
           std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
           result.emplace_back(RegisterToken, buf, reg2);
+
+          if (sel_id != 0) {
+            result.emplace_back(OperandSeparatorToken, ", ");
+            std::snprintf(buf, sizeof(buf), "%u", sel_id);
+            result.emplace_back(IntegerToken, buf, sel_id);
+          }
 
           len = Sizes::LEN32BIT;
           return true;
@@ -1529,19 +1650,28 @@ bool Format_Ext_Text(const uint64_t opcode, size_t &len,
         } else {                                            // 00000
           if (opcode >> 16 & OpcodeFields::OPCODE_BIT_6) {  // 000001; ldsr
             // Load to system register
-            // Text format: ldsr reg2, regID
+            // Text format: ldsr reg2, regID, selID
+            // Encoding (G3MH p. ~130): rrrrr111111RRRRR sssss00000100000
+            //   low 16:  rrrrr = regID (reuses reg1 field), RRRRR = reg2
+            //   high 16: sssss = selID in bits 15..11
             ITEXT("ldsr")
 
             std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
             result.emplace_back(RegisterToken, buf, reg2);
             result.emplace_back(OperandSeparatorToken, ", ");
 
-            // RegID the same field as reg1; the difference is that it
-            // identifies a system register instead
-            std::snprintf(buf, sizeof(buf), "%s", SystemRegToStr(reg1));
-            result.emplace_back(
-                PossibleAddressToken, buf,
-                (Registers::SYSTEM_REG_BASE + reg1 * Registers::REGISTER_SIZE));
+            const uint8_t sel_id = static_cast<uint8_t>((opcode >> 27) & 0x1F);
+            const uint32_t sysreg_handle =
+                Registers::SysregHandle(reg1, sel_id);
+            std::snprintf(buf, sizeof(buf), "%s",
+                          SystemRegToStrBanked(reg1, sel_id));
+            result.emplace_back(RegisterToken, buf, sysreg_handle);
+
+            if (sel_id != 0) {
+              result.emplace_back(OperandSeparatorToken, ", ");
+              std::snprintf(buf, sizeof(buf), "%u", sel_id);
+              result.emplace_back(IntegerToken, buf, sel_id);
+            }
 
             len = Sizes::LEN32BIT;
             return true;
@@ -1675,6 +1805,11 @@ bool BswR2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
   return Format_Ext_Text(opcode, len, result);
 }
 
+bool BinsR1PosWidthR2::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                            std::vector<BN::InstructionTextToken> &result) {
+  return Format_Ext_Text(opcode, len, result);
+}
+
 bool Bv::Text(const uint64_t opcode, uint64_t addr, size_t &len,
               std::vector<BN::InstructionTextToken> &result) {
   return Text_III_BCOND(opcode, addr, len, result);
@@ -1779,6 +1914,15 @@ bool DivuR1R2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
 bool Ei::Text(const uint64_t opcode, uint64_t addr, size_t &len,
               std::vector<BN::InstructionTextToken> &result) {
   return Format_Ext_Text(opcode, len, result);
+}
+
+bool SyncBarrier::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                       std::vector<BN::InstructionTextToken> &result) {
+  (void)opcode;
+  (void)addr;
+  ITEXT(mnemonic)
+  len = Sizes::LEN16BIT;
+  return true;
 }
 
 bool Halt::Text(const uint64_t opcode, uint64_t addr, size_t &len,
@@ -1896,6 +2040,16 @@ bool MuluR1R2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
   return Format_Ext_Text(opcode, len, result);
 }
 
+bool MacR1R2R3R4::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                       std::vector<BN::InstructionTextToken> &result) {
+  return Format_Ext_Text(opcode, len, result);
+}
+
+bool MacuR1R2R3R4::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                        std::vector<BN::InstructionTextToken> &result) {
+  return Format_Ext_Text(opcode, len, result);
+}
+
 bool Nop::Text(const uint64_t opcode, uint64_t addr, size_t &len,
                std::vector<BN::InstructionTextToken> &result) {
   return Text_I_MOV_NOP(opcode, len, result);
@@ -1957,6 +2111,16 @@ bool PrepareList12Imm5SpImm32::Text(
 
 bool Reti::Text(const uint64_t opcode, uint64_t addr, size_t &len,
                 std::vector<BN::InstructionTextToken> &result) {
+  return Format_Ext_Text(opcode, len, result);
+}
+
+bool Eiret::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                 std::vector<BN::InstructionTextToken> &result) {
+  return Format_Ext_Text(opcode, len, result);
+}
+
+bool Feret::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                 std::vector<BN::InstructionTextToken> &result) {
   return Format_Ext_Text(opcode, len, result);
 }
 
@@ -2158,5 +2322,282 @@ bool ZxbR1::Text(const uint64_t opcode, uint64_t addr, size_t &len,
 bool ZxhR1::Text(const uint64_t opcode, uint64_t addr, size_t &len,
                  std::vector<BN::InstructionTextToken> &result) {
   return Text_I_SATADD_ZXH(opcode, len, result);
+}
+
+/* -----------------------------------------------------------------
+ * V850E3 / RH850 G3MH additions
+ * ----------------------------------------------------------------- */
+static void EmitRegRegPair(const char *mnemonic, uint8_t reg_a, uint8_t reg_b,
+                           std::vector<BN::InstructionTextToken> &result) {
+  char buf[32];
+  ITEXT(mnemonic)
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg_a));
+  result.emplace_back(RegisterToken, buf, reg_a);
+  result.emplace_back(TextToken, "-");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg_b));
+  result.emplace_back(RegisterToken, buf, reg_b);
+}
+
+bool PushspRhRt::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                      std::vector<BN::InstructionTextToken> &result) {
+  const auto rh = ExtractReg1OpcodeField(opcode);
+  const auto rt = ExtractReg3OpcodeField(opcode);
+  EmitRegRegPair("pushsp", rh, rt, result);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool PopspRhRt::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                     std::vector<BN::InstructionTextToken> &result) {
+  const auto rh = ExtractReg1OpcodeField(opcode);
+  const auto rt = ExtractReg3OpcodeField(opcode);
+  EmitRegRegPair("popsp", rh, rt, result);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool CaxiR1R2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                      std::vector<BN::InstructionTextToken> &result) {
+  char buf[32];
+  const auto reg1 = ExtractReg1OpcodeField(opcode);
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  ITEXT("caxi")
+  result.emplace_back(TextToken, "[");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg1));
+  result.emplace_back(RegisterToken, buf, reg1);
+  result.emplace_back(TextToken, "]");
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
+  result.emplace_back(RegisterToken, buf, reg2);
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg3));
+  result.emplace_back(RegisterToken, buf, reg3);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool JarlR1R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                    std::vector<BN::InstructionTextToken> &result) {
+  char buf[32];
+  const auto reg1 = ExtractReg1OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  ITEXT("jarl")
+  result.emplace_back(TextToken, "[");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg1));
+  result.emplace_back(RegisterToken, buf, reg1);
+  result.emplace_back(TextToken, "]");
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg3));
+  result.emplace_back(RegisterToken, buf, reg3);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool Snooze::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                  std::vector<BN::InstructionTextToken> &result) {
+  ITEXT("snooze")
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool RieI::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                std::vector<BN::InstructionTextToken> &result) {
+  ITEXT("rie")
+  len = Sizes::LEN16BIT;
+  return true;
+}
+
+bool RieX::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                std::vector<BN::InstructionTextToken> &result) {
+  char buf[32];
+  // imm5 is in word1 bits [15:11]; imm4 in word1 bits [3:0].
+  const uint8_t imm5 =
+      static_cast<uint8_t>((opcode & OpcodeFields::MASK_REG2) >>
+                           OpcodeFields::SHIFT_REG2);
+  const uint8_t imm4 = static_cast<uint8_t>(opcode & 0x0F);
+  ITEXT("rie")
+  std::snprintf(buf, sizeof(buf), "%#x", imm5);
+  result.emplace_back(IntegerToken, buf, imm5, sizeof(imm5));
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%#x", imm4);
+  result.emplace_back(IntegerToken, buf, imm4, sizeof(imm4));
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+static bool TextSchCommon(const char *mnemonic, uint64_t opcode, size_t &len,
+                          std::vector<BN::InstructionTextToken> &result) {
+  char buf[32];
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  ITEXT(mnemonic)
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
+  result.emplace_back(RegisterToken, buf, reg2);
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg3));
+  result.emplace_back(RegisterToken, buf, reg3);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool Sch0lR2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                     std::vector<BN::InstructionTextToken> &result) {
+  return TextSchCommon("sch0l", opcode, len, result);
+}
+bool Sch0rR2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                     std::vector<BN::InstructionTextToken> &result) {
+  return TextSchCommon("sch0r", opcode, len, result);
+}
+bool Sch1lR2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                     std::vector<BN::InstructionTextToken> &result) {
+  return TextSchCommon("sch1l", opcode, len, result);
+}
+bool Sch1rR2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,
+                     std::vector<BN::InstructionTextToken> &result) {
+  return TextSchCommon("sch1r", opcode, len, result);
+}
+/* --- Single-precision FPU disassembly --- */
+
+namespace {
+
+const char *FpuMnemonic(FpuOp op) {
+  switch (op) {
+    case FpuOp::AddfS:     return "addf.s";
+    case FpuOp::SubfS:     return "subf.s";
+    case FpuOp::MulfS:     return "mulf.s";
+    case FpuOp::DivfS:     return "divf.s";
+    case FpuOp::MaxfS:     return "maxf.s";
+    case FpuOp::MinfS:     return "minf.s";
+    case FpuOp::AbsfS:     return "absf.s";
+    case FpuOp::NegfS:     return "negf.s";
+    case FpuOp::SqrtfS:    return "sqrtf.s";
+    case FpuOp::RecipfS:   return "recipf.s";
+    case FpuOp::RsqrtfS:   return "rsqrtf.s";
+    case FpuOp::RoundfSw:  return "roundf.sw";
+    case FpuOp::TrncfSw:   return "trncf.sw";
+    case FpuOp::CeilfSw:   return "ceilf.sw";
+    case FpuOp::FloorfSw:  return "floorf.sw";
+    case FpuOp::CvtfSw:    return "cvtf.sw";
+    case FpuOp::RoundfSuw: return "roundf.suw";
+    case FpuOp::TrncfSuw:  return "trncf.suw";
+    case FpuOp::CeilfSuw:  return "ceilf.suw";
+    case FpuOp::FloorfSuw: return "floorf.suw";
+    case FpuOp::CvtfSuw:   return "cvtf.suw";
+    case FpuOp::CvtfWs:    return "cvtf.ws";
+    case FpuOp::CvtfHs:    return "cvtf.hs";
+    case FpuOp::CvtfSh:    return "cvtf.sh";
+    case FpuOp::CvtfUws:   return "cvtf.uws";
+    case FpuOp::FmafS:     return "fmaf.s";
+    case FpuOp::FmsfS:     return "fmsf.s";
+    case FpuOp::FnmafS:    return "fnmaf.s";
+    case FpuOp::FnmsfS:    return "fnmsf.s";
+    case FpuOp::CmpfS:     return "cmpf.s";
+    case FpuOp::CmovfS:    return "cmovf.s";
+    case FpuOp::Trfsr:     return "trfsr";
+  }
+  return "<fpu?>";
+}
+
+void PushReg(std::vector<BN::InstructionTextToken> &result, uint8_t reg) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg));
+  result.emplace_back(RegisterToken, buf, reg);
+}
+
+void PushInt(std::vector<BN::InstructionTextToken> &result, uint32_t v) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%u", v);
+  result.emplace_back(IntegerToken, buf, v, sizeof(v));
+}
+
+}  // namespace
+
+bool FpuSingle::Text(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                     std::vector<BN::InstructionTextToken> &result) {
+  const auto reg1 = ExtractReg1OpcodeField(opcode);
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  const auto hw2 = static_cast<uint16_t>(opcode >> 16);
+  const uint8_t fcbit = (hw2 >> 1) & 0b111;           /* subop bits 3..1 */
+  const uint8_t fcond = (reg3 >> 3) & 0b1111;         /* reg3 bits 3..0 */
+
+  result.emplace_back(InstructionToken, FpuMnemonic(op));
+  result.emplace_back(TextToken, " ");
+
+  switch (op) {
+    /* three-operand arithmetic & FMA: reg1, reg2, reg3 */
+    case FpuOp::AddfS:
+    case FpuOp::SubfS:
+    case FpuOp::MulfS:
+    case FpuOp::DivfS:
+    case FpuOp::MaxfS:
+    case FpuOp::MinfS:
+    case FpuOp::FmafS:
+    case FpuOp::FmsfS:
+    case FpuOp::FnmafS:
+    case FpuOp::FnmsfS:
+      PushReg(result, reg1);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg2);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg3);
+      break;
+
+    /* unary: reg2, reg3 */
+    case FpuOp::AbsfS:
+    case FpuOp::NegfS:
+    case FpuOp::SqrtfS:
+    case FpuOp::RecipfS:
+    case FpuOp::RsqrtfS:
+    case FpuOp::RoundfSw:
+    case FpuOp::TrncfSw:
+    case FpuOp::CeilfSw:
+    case FpuOp::FloorfSw:
+    case FpuOp::CvtfSw:
+    case FpuOp::RoundfSuw:
+    case FpuOp::TrncfSuw:
+    case FpuOp::CeilfSuw:
+    case FpuOp::FloorfSuw:
+    case FpuOp::CvtfSuw:
+    case FpuOp::CvtfWs:
+    case FpuOp::CvtfHs:
+    case FpuOp::CvtfSh:
+    case FpuOp::CvtfUws:
+      PushReg(result, reg2);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg3);
+      break;
+
+    /* CMPF.S fcond, reg2, reg1, fcbit */
+    case FpuOp::CmpfS:
+      PushInt(result, fcond);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg2);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg1);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushInt(result, fcbit);
+      break;
+
+    /* CMOVF.S fcbit, reg1, reg2, reg3 */
+    case FpuOp::CmovfS:
+      PushInt(result, fcbit);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg1);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg2);
+      result.emplace_back(OperandSeparatorToken, ", ");
+      PushReg(result, reg3);
+      break;
+
+    /* TRFSR fcbit */
+    case FpuOp::Trfsr:
+      PushInt(result, fcbit);
+      break;
+  }
+
+  len = Sizes::LEN32BIT;
+  return true;
 }
 }  // namespace V850
