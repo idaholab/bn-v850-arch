@@ -236,7 +236,7 @@ constexpr uint8_t SHIFT_VII_DISP0 = 5;  // For ld.bu
 // Halfword 2
 constexpr uint16_t MASK_VII_DISP_B = 0b1111111111111111;
 constexpr uint16_t MASK_VII_DISP_H = 0b1111111111111110;
-constexpr uint16_t MASK_VII_DISP_W = 0b1111111111111100;
+constexpr uint16_t MASK_VII_DISP_W = 0b1111111111111110;
 constexpr uint16_t MASK_VII_DISP = 0b1111111111111110;  // For ld.bu
 constexpr uint16_t MASK_VII_SUBOP = 0b0000000000000001;
 
@@ -362,6 +362,87 @@ constexpr uint16_t MASK_XIII_BIT_R28 = 0b0000000010000000;
 constexpr uint16_t MASK_XIII_BIT_R29 = 0b0000000001000000;
 constexpr uint16_t MASK_XIII_BIT_R31 = 0b0000000000100000;
 
+/* ------------------------------ *
+ *    FORMAT XIV: Field Masks     *
+ *    ** Note: is 48-bit          *
+ *                                *
+ * Layout (per Ghidra SLEIGH      *
+ * v850_load_store.sinc / v850e3  *
+ * .sinc):                        *
+ *                                *
+ *  HW1 bits 0..15:               *
+ *    [15..11]=reg2(=R1115, fixed *
+ *              to 1 for XIV)     *
+ *    [10..5] =6-bit op (0b111100 *
+ *              or 0b111101)      *
+ *    [4..0]  =reg1 (base/R0004)  *
+ *                                *
+ *  HW2 bits 16..31:              *
+ *    [31..27]=R2731 (src/dst)    *
+ *    [26..20]=op2026 (disp low   *
+ *              7 bits, for .b /  *
+ *              .bu / .hu) — or   *
+ *    [26..21]=op2126 (disp low   *
+ *              6 bits, for .h /  *
+ *              .w / .hu? / .dw), *
+ *              with op1620 low   *
+ *              bit feeding the   *
+ *              halfword/word     *
+ *              alignment zero    *
+ *    [19..16]=op1619 sub (.b,    *
+ *              .bu, .hu, .st.b)  *
+ *    [20..16]=op1620 sub (.h,    *
+ *              .w, .st.h, .st.w, *
+ *              .ld.dw, .st.dw)   *
+ *                                *
+ *  HW3 bits 32..47:              *
+ *    [47..32]=s3247 (signed 16-  *
+ *              bit upper disp)   *
+ *                                *
+ *  disp23 reconstruction:        *
+ *    .b / .bu / .hu / .st.b:     *
+ *      disp23 =                  *
+ *        (s3247 << 7) | op2026   *
+ *    .h / .w / .st.h / .st.w /   *
+ *    .ld.dw / .st.dw:            *
+ *      disp23 =                  *
+ *        (s3247 << 7) |          *
+ *        (op2126 << 1)           *
+ *      (low bit always 0 due     *
+ *      to alignment)             *
+ * ------------------------------ */
+
+// HW1: 6-bit opcode lives in bits 5..10 as usual; distinguished from
+// Format VII ld.bu by (a) reg2==1 AND (b) op0515 matching one of the
+// two 11-bit HW1 patterns below.
+constexpr uint16_t MASK_XIV_OP0515 = 0b0000111111100000;  // bits 5..15
+constexpr uint8_t SHIFT_XIV_OP0515 = 5;
+
+// HW2 sub-selectors. 4-bit field in bits 16..19 for byte-granular
+// variants (op1619); 5-bit field in bits 16..20 for halfword/word
+// variants (op1620). Opcode *values* for these sub-selectors live in
+// the V850::Opcodes namespace (see bottom of this file) alongside the
+// other OP_*/SUBOP_* constants.
+constexpr uint16_t MASK_XIV_OP1619 = 0b0000000000001111;  // HW2 bits 16..19
+constexpr uint16_t MASK_XIV_OP1620 = 0b0000000000011111;  // HW2 bits 16..20
+
+// HW2 field extractors. All masks below apply to the 16-bit HW2 value
+// (obtained via `(opcode >> 16) & 0xFFFF`), with bit 0 of that halfword
+// corresponding to bit 16 of the full 48-bit instruction.
+//
+//   full-instr bit 16..19 == HW2 bit 0..3   (op1619)
+//   full-instr bit 16..20 == HW2 bit 0..4   (op1620)
+//   full-instr bit 20..26 == HW2 bit 4..10  (op2026)
+//   full-instr bit 21..26 == HW2 bit 5..10  (op2126)
+//   full-instr bit 27..31 == HW2 bit 11..15 (R2731)
+constexpr uint16_t MASK_XIV_OP2026 = 0b0000011111110000;  // HW2 bits 4..10
+constexpr uint8_t SHIFT_XIV_OP2026 = 4;
+constexpr uint16_t MASK_XIV_OP2126 = 0b0000011111100000;  // HW2 bits 5..10
+constexpr uint8_t SHIFT_XIV_OP2126 = 5;
+
+constexpr uint16_t MASK_XIV_R2731 = 0b1111100000000000;  // HW2 bits 11..15
+constexpr uint8_t SHIFT_XIV_R2731 = 11;
+
 }  // namespace V850::OpcodeFields
 
 namespace V850::Opcodes {
@@ -386,6 +467,37 @@ constexpr uint8_t OP_I_6BIT_ADD = 0b001110;
 constexpr uint8_t OP_I_6BIT_CMP = 0b001111;
 // Dbtrap opcode defined by this *exact* 16-bit value
 constexpr uint16_t EXACT_OP_I_DBTRAP = 0b1111100001000000;
+
+// V850E3/G3MH debug Format-I 16-bit exact encodings (Ghidra SLEIGH
+// v850e3.sinc):
+//   DBCP     = 0xE840
+//   DBHVTRAP = 0xE040
+// Both share the op0510 = 0b000010 field with DBTRAP / SWITCH / DIVH and
+// are distinguished from DBTRAP (0xF840) only by the reg2 (bits[15:11])
+// and reg1 (bits[4:0]) fields.
+constexpr uint16_t EXACT_OP_I_DBCP = 0xE840;
+constexpr uint16_t EXACT_OP_I_DBHVTRAP = 0xE040;
+
+// V850E3/G3MH Format-X 32-bit exact HW2 encodings (Ghidra SLEIGH
+// v850e3.sinc). HW1 is 0x87E0 (reg2 bit set) for TLB* / EI, 0x07E0 for
+// DI / EST. All share op0510 = 0b111111.
+constexpr uint16_t EXACT_OP_X_HW2_EI_DI  = 0x0160;
+constexpr uint16_t EXACT_OP_X_HW2_TLBAI  = 0x8960;
+constexpr uint16_t EXACT_OP_X_HW2_TLBR   = 0xE960;
+constexpr uint16_t EXACT_OP_X_HW2_TLBS   = 0xC160;
+constexpr uint16_t EXACT_OP_X_HW2_TLBVI  = 0x8160;
+constexpr uint16_t EXACT_OP_X_HW2_TLBW   = 0xE160;
+constexpr uint16_t EXACT_OP_X_HW2_EST    = 0x0132;
+
+// SYSCALL / DBPUSH / DBTAG all share HW2 low-11 = 0x160 (same as EI/DI)
+// and op0510 = 0b111111, but are distinguished by HW1 reg2 (bits[15:11]):
+//   SYSCALL vector8 : reg2 = 0b11010  (op0515 = 0x6BF)
+//   DBPUSH  R,R    : reg2 = 0b01011  (op0515 = 0x2FF)
+//   DBTAG   imm10  : reg2 = 0b11001  (op0515 = 0x67F)
+constexpr uint8_t  REG2_FIELD_SYSCALL = 0b11010;
+constexpr uint8_t  REG2_FIELD_DBPUSH  = 0b01011;
+constexpr uint8_t  REG2_FIELD_DBTAG   = 0b11001;
+constexpr uint16_t MASK_X_HW2_LOW11   = 0x07FF;
 
 // Synchronize-family instructions: Format I, exact 16-bit encodings.
 // Per G3MH Software Manual Section 7.2, pp. 287-290 (SYNCE/SYNCI/SYNCM/SYNCP).
@@ -560,6 +672,7 @@ constexpr uint8_t SUBOP_XII_MULU = 0b10;
 constexpr uint8_t SUBOP_XII_BSW = 0b000;
 constexpr uint8_t SUBOP_XII_BSH = 0b010;
 constexpr uint8_t SUBOP_XII_HSW = 0b100;
+constexpr uint8_t SUBOP_XII_HSH = 0b110;
 
 /* Format IX: BINS (bitfield insert) -- sub-opcode constants */
 // Sub-opcode values live in bits 5..10 of word 2 (G3MH p.162).
@@ -594,6 +707,124 @@ constexpr uint8_t PREPARE_LOAD_SP = 0b00;
 constexpr uint8_t PREPARE_LOAD_SIGN_EXTENDED_IMM16 = 0b01;
 constexpr uint8_t PREPARE_LOAD_LSL_IMM16 = 0b10;
 constexpr uint8_t PREPARE_LOAD_IMM32 = 0b11;
+
+/* ------------------------- */
+/* FORMAT XIV: 48-bit disp23 load/store (V850E3 / RH850 G3MH).
+ *
+ * Field masks & extractors live in V850::OpcodeFields. Values below
+ * select which XIV instruction a given (op0515, op1619/op1620) pair
+ * encodes. See opcodes.h Format XIV comment block and Ghidra SLEIGH
+ * v850_load_store.sinc / v850e3.sinc for the source of truth. */
+/* ------------------------- */
+
+// 6-bit opcode values (bits 5..10) — but note that Format XIV is actually
+// distinguished by the full 11-bit op0515 field, because reg2 (bits 11..15)
+// is fixed to 1. We compare against the full op0515 value in the decoder.
+constexpr uint16_t OP_XIV_6BIT_GROUP_A = 0x03C;  // ld.b/h/w, st.b/w
+constexpr uint16_t OP_XIV_6BIT_GROUP_B = 0x03D;  // ld.bu/hu, st.h, ld.dw/st.dw
+
+// op1619 values (byte-granular / hu variants):
+//   0x3C group -> ld.b=5, st.b=0xD
+//   0x3D group -> ld.bu=5, ld.hu=7
+constexpr uint8_t SUBOP_XIV_LDB = 0x5;
+constexpr uint8_t SUBOP_XIV_STB = 0xD;
+constexpr uint8_t SUBOP_XIV_LDBU = 0x5;
+constexpr uint8_t SUBOP_XIV_LDHU = 0x7;
+
+// op1620 values (aligned halfword / word / doubleword variants):
+//   0x3C group -> ld.h=7, ld.w=9, st.w=0xF
+//   0x3D group -> st.h=0xD, ld.dw=9, st.dw=0xF
+constexpr uint8_t SUBOP_XIV_LDH = 0x07;
+constexpr uint8_t SUBOP_XIV_LDW = 0x09;
+constexpr uint8_t SUBOP_XIV_STW = 0x0F;
+constexpr uint8_t SUBOP_XIV_STH = 0x0D;
+constexpr uint8_t SUBOP_XIV_LDDW = 0x09;
+constexpr uint8_t SUBOP_XIV_STDW = 0x0F;
+
+/* ------------------------- */
+/* V850E3 post-increment / pre-decrement LD/ST (32-bit Format XI-ish).
+ *
+ * Encoding (see Ghidra SLEIGH v850e3.sinc lines 302..382):
+ *   HW1 bits 15..5 (op0515) fix low 6 bits to 0b111111 (== OP_EXT_6BIT)
+ *       and use bits 15..11 (reg2 field) to encode the direction:
+ *         reg2 = 2 (0x0BF) -> post-increment, signed-load / store
+ *         reg2 = 3 (0x0FF) -> post-increment, unsigned-load
+ *         reg2 = 4 (0x13F) -> pre-decrement,  signed-load / store
+ *         reg2 = 5 (0x17F) -> pre-decrement,  unsigned-load
+ *   HW2 bits 26..16 (word2 low 11 bits) select the access width/op:
+ *         0x370 = ld.b / ld.bu   0x372 = st.b
+ *         0x374 = ld.h / ld.hu   0x376 = st.h
+ *         0x378 = ld.w           0x37A = st.w
+ *   HW1 bits 0..4  = reg1 (base / pointer register — also the writeback target).
+ *   HW2 bits 31..27 = reg3 (load destination / store source).
+ *
+ * After the memory access the base register reg1 is updated:
+ *   post-inc: reg1 <- reg1 + access_size
+ *   pre-dec : reg1 <- reg1 - access_size
+ * SLEIGH models this as a post-operation write even for "pre-decrement"
+ * (the effective address is the original reg1, NOT reg1-size). This matches
+ * the V850E3 pipeline semantics used by Renesas.
+ */
+/* ------------------------- */
+
+// reg2-field direction selectors (HW1 bits 15..11).
+constexpr uint8_t REG2_PIPD_POSTINC_SIGNED   = 0b00010;  // 2: post-inc (b/h/w/st.*)
+constexpr uint8_t REG2_PIPD_POSTINC_UNSIGNED = 0b00011;  // 3: post-inc (bu/hu)
+constexpr uint8_t REG2_PIPD_PREDEC_SIGNED    = 0b00100;  // 4: pre-dec  (b/h/w/st.*)
+constexpr uint8_t REG2_PIPD_PREDEC_UNSIGNED  = 0b00101;  // 5: pre-dec  (bu/hu)
+
+// HW2 low-11-bit (op1626) access-width / opcode selectors.
+constexpr uint16_t SUBOP_PIPD_LDB_LDBU = 0x370;  // ld.b or ld.bu (reg2 disambig)
+constexpr uint16_t SUBOP_PIPD_STB      = 0x372;
+constexpr uint16_t SUBOP_PIPD_LDH_LDHU = 0x374;  // ld.h or ld.hu (reg2 disambig)
+constexpr uint16_t SUBOP_PIPD_STH      = 0x376;
+constexpr uint16_t SUBOP_PIPD_LDW      = 0x378;
+constexpr uint16_t SUBOP_PIPD_STW      = 0x37A;
+
+/* ------------------------------------------------------------------
+ * V850E3 / RH850 G3MH extensions: ADF / SBF / ROTL / LOOP / CACHE / PREF
+ *
+ * ADF   cccc, reg1, reg2, reg3  Format XI  op2126=0x1D, op1616=0
+ * SBF   cccc, reg1, reg2, reg3  Format XI  op2126=0x1C, op1616=0
+ * ROTL  reg1,reg2,reg3 / imm5,reg2,reg3   op1626=0x0C6 / 0x0C4
+ * LOOP  reg1, disp16  op0515=0x037 & reg2=0 ; op1616=1 (hw1 looks like MULHI)
+ * CACHE cacheop, reg1  op0515=0x3F, op1315=0x7 (reg2 bits[15:13]=111);
+ *                      hw2 op1626=0x160; cacheop=(op1112<<5)|op2731
+ * PREF  prefop, reg1   op0515=0x6FF (reg2=0b11011); hw2 op1626=0x160;
+ *                      prefop = op2731
+ * ------------------------------------------------------------------ */
+
+// op2126 values (hw2 bits 5..10) for Format XI ADF / SBF.
+constexpr uint8_t SUBOP_XI_SBF = 0b011100;  // 0x1C
+constexpr uint8_t SUBOP_XI_ADF = 0b011101;  // 0x1D
+
+// Full low-11-bit hw2 sub-opcodes for ROTL (op1626 covers hw2[10:0]).
+constexpr uint16_t SUBOP_XI_ROTL_REG = 0x0C6;  // reg1/reg2/reg3 form
+constexpr uint16_t SUBOP_XI_ROTL_IMM = 0x0C4;  // imm5/reg2/reg3 form
+
+// LOOP: full 32-bit encoding is distinguished from MULHI by reg2==0
+// and hw2 bit 0 (op1616) == 1. op1731 in hw2 bits 1..15 is the
+// unsigned 15-bit distance; target = addr - (op1731 << 1).
+constexpr uint16_t MASK_LOOP_BIT16 = 0b0000000000000001;
+constexpr uint16_t MASK_LOOP_DISP = 0b1111111111111110;  // hw2 bits 1..15
+constexpr uint8_t SHIFT_LOOP_DISP = 1;
+
+// CACHE / PREF share op1626 = 0x160 (hw2 bits [10:0]). op2731 in hw2
+// bits [15:11] carries the low 5 bits of cacheop (for CACHE) or prefop
+// (for PREF). Distinguished by hw1 reg2 field:
+//   cache  hw1 reg2 bits [4:2] (=op1315) = 0b111; bits [1:0] (=op1112)
+//          form the high 2 bits of cacheop. Full cacheop =
+//          (op1112 << 5) | op2731.
+//   pref   hw1 reg2 = 0b11011 (fixed); prefop = op2731.
+constexpr uint16_t SUBOP_CACHE_PREF_HW2_LOW11 = 0x160;
+constexpr uint16_t MASK_CACHE_PREF_OP2731 = 0b1111100000000000;  // hw2[15:11]
+constexpr uint8_t SHIFT_CACHE_PREF_OP2731 = 11;
+
+constexpr uint8_t REG2_CACHE_HI3 = 0b111;  // hw1 reg2 bits[4:2] (op1315)
+constexpr uint8_t MASK_REG2_HI3 = 0b11100;
+constexpr uint8_t MASK_REG2_LO2 = 0b00011;
+constexpr uint8_t REG2_PREF = 0b11011;     // hw1 reg2 (exact)
+
 }  // namespace V850::Opcodes
 
 #endif  // BINARYNINJA_API_V850_OPCODES_H

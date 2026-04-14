@@ -22,6 +22,71 @@ namespace BN = BinaryNinja;
 
 namespace V850 {
 
+/* Reconstruct the signed 23-bit displacement for Format XIV instructions.
+ * Matches the Ghidra SLEIGH definition:
+ *   byte-granular variants: disp23 = (s3247 << 7) | op2026
+ *   aligned variants:       disp23 = (s3247 << 7) | (op2126 << 1)
+ * Returned value is sign-extended to 32 bits. */
+static int32_t LiftExtractXIVDisp23(const uint64_t opcode, bool aligned) {
+  const auto hw2 = static_cast<uint16_t>(opcode >> 16);
+  const auto hw3 = static_cast<uint16_t>(opcode >> 32);
+  uint32_t low;
+  if (aligned) {
+    low = (static_cast<uint32_t>(hw2 & OpcodeFields::MASK_XIV_OP2126) >>
+           OpcodeFields::SHIFT_XIV_OP2126)
+          << 1;
+  } else {
+    low = static_cast<uint32_t>(hw2 & OpcodeFields::MASK_XIV_OP2026) >>
+          OpcodeFields::SHIFT_XIV_OP2026;
+  }
+  const int32_t upper = static_cast<int32_t>(static_cast<int16_t>(hw3));
+  return (upper << 7) | static_cast<int32_t>(low);
+}
+
+static uint8_t LiftExtractXIVReg3(const uint64_t opcode) {
+  const auto hw2 = static_cast<uint16_t>(opcode >> 16);
+  return static_cast<uint8_t>((hw2 & OpcodeFields::MASK_XIV_R2731) >>
+                              OpcodeFields::SHIFT_XIV_R2731);
+}
+
+/* Shared load lift for Format XIV: reg3 = extend(M[reg1 + se(disp23)]).
+ *   access_size : byte count of the memory load (1, 2, or 4)
+ *   sign_extend : true -> SignExtend to 32 bits, false -> ZeroExtend
+ *   aligned     : true -> use op2126<<1 disp, false -> use op2026 disp */
+static bool Lift_XIV_Load(const uint64_t opcode, size_t &len,
+                          BN::LowLevelILFunction &il, size_t access_size,
+                          bool sign_extend, bool aligned) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 = LiftExtractXIVReg3(opcode);
+  const int32_t disp = LiftExtractXIVDisp23(opcode, aligned);
+
+  BN::ExprId addr_il =
+      il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+             il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp)));
+  BN::ExprId load_il = il.Load(access_size, addr_il);
+  BN::ExprId extended = sign_extend ? il.SignExtend(Sizes::LEN32BIT, load_il)
+                                    : il.ZeroExtend(Sizes::LEN32BIT, load_il);
+  il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, extended));
+  len = Sizes::LEN48BIT;
+  return true;
+}
+
+static bool Lift_XIV_Store(const uint64_t opcode, size_t &len,
+                           BN::LowLevelILFunction &il, size_t access_size,
+                           bool aligned) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 = LiftExtractXIVReg3(opcode);
+  const int32_t disp = LiftExtractXIVDisp23(opcode, aligned);
+
+  BN::ExprId addr_il =
+      il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+             il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp)));
+  il.AddInstruction(
+      il.Store(access_size, addr_il, il.Register(access_size, reg3)));
+  len = Sizes::LEN48BIT;
+  return true;
+}
+
 bool Lift_I_JMP_IV_SLDHU_SLDBU(const uint64_t opcode, size_t &len,
                                BN::LowLevelILFunction &il) {
   if (const auto reg2 = ExtractReg2OpcodeField(opcode); reg2 == Registers::R0) {
@@ -1906,6 +1971,16 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             // TODO note: the flag behavior for this instruction is real weird
             len = Sizes::LEN32BIT;
             return true;
+
+          case Opcodes::SUBOP_XII_HSH:
+            // Halfword swap halfword (V850E3); reg3 = reg2 (value unchanged)
+            // Text format: hsh reg2, reg3
+            // Flags: OV=0, S=sign(reg3), Z=(reg3==0), CY=(reg2[15:0]==0)
+            il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
+                                             il.Register(Sizes::LEN32BIT, reg2)));
+            // TODO note: the flag behavior for this instruction is real weird
+            len = Sizes::LEN32BIT;
+            return true;
           default:
             return false;
         }
@@ -2937,6 +3012,12 @@ bool HswR2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
   return Format_Ext_Lift(opcode, addr, len, il);
 }
 
+bool HshR2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                   BN::LowLevelILFunction &il,
+                   BinaryNinja::Architecture *arch) {
+  return Format_Ext_Lift(opcode, addr, len, il);
+}
+
 bool JarlDisp22R2::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                         BN::LowLevelILFunction &il,
                         BinaryNinja::Architecture *arch) {
@@ -3943,4 +4024,410 @@ bool FpuSingle::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
   len = Sizes::LEN32BIT;
   return true;
 }
+
+/* ---- Format XIV (48-bit disp23 LD/ST) lifts ---- */
+bool LdbDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                         BN::LowLevelILFunction &il,
+                         BinaryNinja::Architecture *arch) {
+  return Lift_XIV_Load(opcode, len, il, Sizes::LEN8BIT,
+                       /*sign_extend=*/true, /*aligned=*/false);
+}
+
+bool LdhDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                         BN::LowLevelILFunction &il,
+                         BinaryNinja::Architecture *arch) {
+  return Lift_XIV_Load(opcode, len, il, Sizes::LEN16BIT,
+                       /*sign_extend=*/true, /*aligned=*/true);
+}
+
+bool LdwDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                         BN::LowLevelILFunction &il,
+                         BinaryNinja::Architecture *arch) {
+  return Lift_XIV_Load(opcode, len, il, Sizes::LEN32BIT,
+                       /*sign_extend=*/true, /*aligned=*/true);
+}
+
+bool LdbuDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                          BN::LowLevelILFunction &il,
+                          BinaryNinja::Architecture *arch) {
+  return Lift_XIV_Load(opcode, len, il, Sizes::LEN8BIT,
+                       /*sign_extend=*/false, /*aligned=*/false);
+}
+
+bool LdhuDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                          BN::LowLevelILFunction &il,
+                          BinaryNinja::Architecture *arch) {
+  // Per SLEIGH: disp uses op2026 (byte-granular) for this variant.
+  return Lift_XIV_Load(opcode, len, il, Sizes::LEN16BIT,
+                       /*sign_extend=*/false, /*aligned=*/false);
+}
+
+bool StbR3Disp23R1::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                         BN::LowLevelILFunction &il,
+                         BinaryNinja::Architecture *arch) {
+  return Lift_XIV_Store(opcode, len, il, Sizes::LEN8BIT,
+                        /*aligned=*/false);
+}
+
+bool SthR3Disp23R1::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                         BN::LowLevelILFunction &il,
+                         BinaryNinja::Architecture *arch) {
+  return Lift_XIV_Store(opcode, len, il, Sizes::LEN16BIT,
+                        /*aligned=*/true);
+}
+
+bool StwR3Disp23R1::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                         BN::LowLevelILFunction &il,
+                         BinaryNinja::Architecture *arch) {
+  return Lift_XIV_Store(opcode, len, il, Sizes::LEN32BIT,
+                        /*aligned=*/true);
+}
+
+/* TODO: ld.dw / st.dw operate on a V850E3 register pair (R2731pairEx).
+ * Accurate lifting requires the reg-pair convention to be decided. Mark
+ * as Unimplemented for now so decompilation surfaces the instruction
+ * without silently lifting wrong semantics. */
+bool LddwDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                          BN::LowLevelILFunction &il,
+                          BinaryNinja::Architecture *arch) {
+  il.AddInstruction(il.Unimplemented());
+  len = Sizes::LEN48BIT;
+  return true;
+}
+
+bool StdwR3Disp23R1::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                          BN::LowLevelILFunction &il,
+                          BinaryNinja::Architecture *arch) {
+  il.AddInstruction(il.Unimplemented());
+  len = Sizes::LEN48BIT;
+  return true;
+}
+
+/* ---- V850E3 post-inc / pre-dec LD/ST lifts ----
+ *
+ * Per Ghidra SLEIGH v850e3.sinc (lines 302..382), BOTH post-increment and
+ * pre-decrement variants take the effective address as the original reg1
+ * value; the SLEIGH semantics perform the memory access first and THEN
+ * adjust reg1 by +/- access_size. Lift this exactly.
+ *
+ * Note: if reg1 == reg3 on a load, the SLEIGH behaviour is that reg3 is
+ * written first (with the loaded value) and then reg1 (== reg3) is
+ * overwritten by the writeback. We emit the same sequence, matching
+ * SLEIGH. */
+static bool Lift_PIpD_Load(const uint64_t opcode, size_t &len,
+                           BN::LowLevelILFunction &il, size_t access_size,
+                           bool sign_extend, int delta) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 = static_cast<uint8_t>(
+      (static_cast<uint16_t>(opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
+      OpcodeFields::SHIFT_XI_REG3);
+
+  BN::ExprId load_il =
+      il.Load(access_size, il.Register(Sizes::LEN32BIT, reg1));
+  BN::ExprId extended = sign_extend ? il.SignExtend(Sizes::LEN32BIT, load_il)
+                                    : il.ZeroExtend(Sizes::LEN32BIT, load_il);
+  il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, extended));
+
+  // Writeback: reg1 <- reg1 +/- access_size.
+  BN::ExprId writeback =
+      (delta >= 0)
+          ? il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                   il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(delta)))
+          : il.Sub(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                   il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(-delta)));
+  il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg1, writeback));
+
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+static bool Lift_PIpD_Store(const uint64_t opcode, size_t &len,
+                            BN::LowLevelILFunction &il, size_t access_size,
+                            int delta) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 = static_cast<uint8_t>(
+      (static_cast<uint16_t>(opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
+      OpcodeFields::SHIFT_XI_REG3);
+
+  il.AddInstruction(il.Store(access_size, il.Register(Sizes::LEN32BIT, reg1),
+                             il.Register(access_size, reg3)));
+
+  BN::ExprId writeback =
+      (delta >= 0)
+          ? il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                   il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(delta)))
+          : il.Sub(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                   il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(-delta)));
+  il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg1, writeback));
+
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+#define V850_PIPD_LOAD_LIFT(CLS, ACCESS, SIGN, DELTA)                      \
+  bool CLS::Lift(const uint64_t opcode, uint64_t addr, size_t &len,        \
+                 BN::LowLevelILFunction &il,                               \
+                 BinaryNinja::Architecture *arch) {                        \
+    return Lift_PIpD_Load(opcode, len, il, ACCESS, SIGN, DELTA);           \
+  }
+#define V850_PIPD_STORE_LIFT(CLS, ACCESS, DELTA)                           \
+  bool CLS::Lift(const uint64_t opcode, uint64_t addr, size_t &len,        \
+                 BN::LowLevelILFunction &il,                               \
+                 BinaryNinja::Architecture *arch) {                        \
+    return Lift_PIpD_Store(opcode, len, il, ACCESS, DELTA);                \
+  }
+
+V850_PIPD_LOAD_LIFT(LdbPostIncR1R3,  Sizes::LEN8BIT,  true,  +1)
+V850_PIPD_LOAD_LIFT(LdhPostIncR1R3,  Sizes::LEN16BIT, true,  +2)
+V850_PIPD_LOAD_LIFT(LdwPostIncR1R3,  Sizes::LEN32BIT, true,  +4)
+V850_PIPD_LOAD_LIFT(LdbuPostIncR1R3, Sizes::LEN8BIT,  false, +1)
+V850_PIPD_LOAD_LIFT(LdhuPostIncR1R3, Sizes::LEN16BIT, false, +2)
+V850_PIPD_LOAD_LIFT(LdbPreDecR1R3,   Sizes::LEN8BIT,  true,  -1)
+V850_PIPD_LOAD_LIFT(LdhPreDecR1R3,   Sizes::LEN16BIT, true,  -2)
+V850_PIPD_LOAD_LIFT(LdwPreDecR1R3,   Sizes::LEN32BIT, true,  -4)
+V850_PIPD_LOAD_LIFT(LdbuPreDecR1R3,  Sizes::LEN8BIT,  false, -1)
+V850_PIPD_LOAD_LIFT(LdhuPreDecR1R3,  Sizes::LEN16BIT, false, -2)
+V850_PIPD_STORE_LIFT(StbPostIncR3R1, Sizes::LEN8BIT,  +1)
+V850_PIPD_STORE_LIFT(SthPostIncR3R1, Sizes::LEN16BIT, +2)
+V850_PIPD_STORE_LIFT(StwPostIncR3R1, Sizes::LEN32BIT, +4)
+V850_PIPD_STORE_LIFT(StbPreDecR3R1,  Sizes::LEN8BIT,  -1)
+V850_PIPD_STORE_LIFT(SthPreDecR3R1,  Sizes::LEN16BIT, -2)
+V850_PIPD_STORE_LIFT(StwPreDecR3R1,  Sizes::LEN32BIT, -4)
+
+#undef V850_PIPD_LOAD_LIFT
+#undef V850_PIPD_STORE_LIFT
+
+// ----------------------------------------------------------------------
+// V850E3 / RH850 G3MH: ADF / SBF / ROTL / LOOP / CACHE / PREF
+// ----------------------------------------------------------------------
+
+// ADF cond, reg1, reg2, reg3: reg3 = reg2 + reg1 + (cond ? 1 : 0)
+// SBF cond, reg1, reg2, reg3: reg3 = reg2 - reg1 - (cond ? 1 : 0)
+// Both write CY/OV/S/Z. SLEIGH adds an extra carry check for the lsb
+// bump; modelled here with il.AddCarry / il.SubBorrow fed from the
+// evaluated cond expression zero-extended to 32 bits.
+static bool LiftAdfSbfCcc(const uint64_t opcode, size_t &len,
+                          BN::LowLevelILFunction &il, bool is_add) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg2 = ExtractReg2OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 = static_cast<uint8_t>(
+      ((opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
+      OpcodeFields::SHIFT_XI_REG3);
+  const auto cond = ExtractTypeXICond(static_cast<uint32_t>(opcode));
+
+  BN::ExprId cond_bit =
+      il.BoolToInt(Sizes::LEN32BIT, ConditionToIL(cond, il));
+  BN::ExprId result;
+  if (is_add) {
+    result = il.AddCarry(Sizes::LEN32BIT,
+                         il.Register(Sizes::LEN32BIT, reg2),
+                         il.Register(Sizes::LEN32BIT, reg1), cond_bit,
+                         Flags::FLAGS_WRITE_CY_OV_S_Z);
+  } else {
+    result = il.SubBorrow(Sizes::LEN32BIT,
+                          il.Register(Sizes::LEN32BIT, reg2),
+                          il.Register(Sizes::LEN32BIT, reg1), cond_bit,
+                          Flags::FLAGS_WRITE_CY_OV_S_Z);
+  }
+  if (reg3 != Registers::R0) {
+    il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, result));
+  } else {
+    il.AddInstruction(result);
+  }
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool AdfCccR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                        BN::LowLevelILFunction &il,
+                        BinaryNinja::Architecture * /*arch*/) {
+  return LiftAdfSbfCcc(opcode, len, il, /*is_add=*/true);
+}
+bool SbfCccR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                        BN::LowLevelILFunction &il,
+                        BinaryNinja::Architecture * /*arch*/) {
+  return LiftAdfSbfCcc(opcode, len, il, /*is_add=*/false);
+}
+
+// ROTL shift, reg2, reg3: reg3 = (reg2 <<< (shift & 0x1F)).
+// Writes S/Z (OV=0, CY=msb-of-result & shift!=0). Here we rely on LLIL
+// RotateLeft to express the data effect cleanly; flag updates match the
+// add-instruction pattern (S/Z only) since BN has no rotate-flag combo.
+static bool LiftRotl(const uint64_t opcode, size_t &len,
+                     BN::LowLevelILFunction &il, BN::ExprId shift_expr) {
+  const auto reg2 = ExtractReg2OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 = static_cast<uint8_t>(
+      ((opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
+      OpcodeFields::SHIFT_XI_REG3);
+  BN::ExprId rotated = il.RotateLeft(Sizes::LEN32BIT,
+                                     il.Register(Sizes::LEN32BIT, reg2),
+                                     shift_expr, Flags::FLAGS_WRITE_S_Z);
+  if (reg3 != Registers::R0) {
+    il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, rotated));
+  } else {
+    il.AddInstruction(rotated);
+  }
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool RotlR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                      BN::LowLevelILFunction &il,
+                      BinaryNinja::Architecture * /*arch*/) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  BN::ExprId shift = il.And(Sizes::LEN32BIT,
+                            il.Register(Sizes::LEN32BIT, reg1),
+                            il.Const(Sizes::LEN32BIT, 0x1F));
+  return LiftRotl(opcode, len, il, shift);
+}
+
+bool RotlImm5R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                        BN::LowLevelILFunction &il,
+                        BinaryNinja::Architecture * /*arch*/) {
+  const uint8_t imm5 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  BN::ExprId shift = il.Const(Sizes::LEN32BIT, imm5);
+  return LiftRotl(opcode, len, il, shift);
+}
+
+// LOOP reg1, disp16: reg1 = reg1 - 1; if (new reg1 != 0) goto target.
+// CY flag mirrors the carry of (old_reg1 + (-1)) per SLEIGH. We only
+// model the control-flow + decrement here; flag side-effects on loop
+// iteration are not load-bearing for decompiler output.
+bool LoopR1Disp16::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+                        BN::LowLevelILFunction &il,
+                        BinaryNinja::Architecture *arch) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const uint16_t hw2 = static_cast<uint16_t>(opcode >> 16);
+  const uint16_t disp_field =
+      static_cast<uint16_t>((hw2 & Opcodes::MASK_LOOP_DISP) >>
+                            Opcodes::SHIFT_LOOP_DISP);
+  const uint32_t target =
+      static_cast<uint32_t>(addr) - (static_cast<uint32_t>(disp_field) << 1);
+
+  len = Sizes::LEN32BIT;
+
+  // reg1 = reg1 - 1 (flag write on the add of -1, matching SLEIGH).
+  il.AddInstruction(il.SetRegister(
+      Sizes::LEN32BIT, reg1,
+      il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+             il.Const(Sizes::LEN32BIT, 0xFFFFFFFFu),
+             Flags::FLAGS_WRITE_CY_OV_S_Z)));
+
+  BN::ExprId dest_if_true = il.Const(Sizes::LEN32BIT, target);
+  BN::ExprId dest_if_false =
+      il.Const(Sizes::LEN32BIT, addr + Sizes::LEN32BIT);
+  BNLowLevelILLabel *t = il.GetLabelForAddress(arch, target);
+  BNLowLevelILLabel *f =
+      il.GetLabelForAddress(arch, addr + Sizes::LEN32BIT);
+  BN::LowLevelILLabel local_true, local_false;
+  const bool indirect_true = (t == nullptr);
+  const bool indirect_false = (f == nullptr);
+  il.AddInstruction(il.If(il.CompareNotEqual(Sizes::LEN32BIT,
+                                             il.Register(Sizes::LEN32BIT, reg1),
+                                             il.Const(Sizes::LEN32BIT, 0)),
+                          t ? *t : local_true,
+                          f ? *f : local_false));
+  if (indirect_true) {
+    il.MarkLabel(local_true);
+    il.AddInstruction(il.Jump(dest_if_true));
+  }
+  if (indirect_false) {
+    il.MarkLabel(local_false);
+  }
+  (void)dest_if_false;
+  return true;
+}
+
+// CACHE: cache maintenance; emit an intrinsic so decompiler output
+// preserves the operation and its effective address without pretending
+// it modifies memory.
+bool CacheOpR1::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                     BN::LowLevelILFunction &il,
+                     BinaryNinja::Architecture * /*arch*/) {
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const uint8_t cacheop = static_cast<uint8_t>(
+      ((ExtractReg2OpcodeField(static_cast<uint16_t>(opcode)) &
+        Opcodes::MASK_REG2_LO2) << 5) |
+      ((static_cast<uint16_t>(opcode >> 16) &
+        Opcodes::MASK_CACHE_PREF_OP2731) >>
+       Opcodes::SHIFT_CACHE_PREF_OP2731));
+  il.AddInstruction(il.Intrinsic(
+      {}, CacheIntrinsic::Cache,
+      {il.Const(Sizes::LEN32BIT, cacheop),
+       il.Register(Sizes::LEN32BIT, reg1)}));
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+// PREF: prefetch hint — architecturally a NOP.
+bool PrefOpR1::Lift(const uint64_t /*opcode*/, uint64_t /*addr*/, size_t &len,
+                    BN::LowLevelILFunction &il,
+                    BinaryNinja::Architecture * /*arch*/) {
+  il.AddInstruction(il.Nop());
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+/* V850E3 / RH850 supervisor / debug / TLB mnemonics.
+ *
+ * These ops have architectural effects (TLB shootdown, debug unit
+ * interaction, SYSCALL vectoring through SCBP, scoped-trap activation)
+ * that we do not model at the LLIL register level. Lower them as opaque
+ * intrinsics so the decompiler preserves the call site. Control-flow
+ * ops (SYSCALL) are additionally marked in Info so BN knows execution
+ * transfers away. */
+bool NoOperandSystemOp::Lift(const uint64_t /*opcode*/, uint64_t /*addr*/,
+                             size_t &out_len, BN::LowLevelILFunction &il,
+                             BinaryNinja::Architecture * /*arch*/) {
+  il.AddInstruction(il.Intrinsic({}, intrinsic_id, {}));
+  out_len = GetInstrLen();
+  return true;
+}
+
+bool Syscall::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &out_len,
+                   BN::LowLevelILFunction &il,
+                   BinaryNinja::Architecture * /*arch*/) {
+  // vector8 = (hw2[13:11] << 5) | hw1[4:0]. See v850_special.sinc.
+  const uint16_t hw2 = static_cast<uint16_t>(opcode >> 16);
+  const uint8_t vec_hi = static_cast<uint8_t>((hw2 >> 11) & 0x07);
+  const uint8_t vec_lo = static_cast<uint8_t>(opcode & 0x1F);
+  const uint8_t vector = static_cast<uint8_t>((vec_hi << 5) | vec_lo);
+  // SYSCALL vectors through SCBP; we don't model SCBP so call an opaque
+  // intrinsic then let fallthrough continue. Treating as an observable
+  // side-effecting call preserves caller analysis without inventing a
+  // register model.
+  il.AddInstruction(il.Intrinsic(
+      {}, SystemIntrinsic::Syscall,
+      {il.Const(Sizes::LEN32BIT, vector)}));
+  out_len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool Dbpush::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &out_len,
+                  BN::LowLevelILFunction &il,
+                  BinaryNinja::Architecture * /*arch*/) {
+  const uint16_t hw2 = static_cast<uint16_t>(opcode >> 16);
+  const uint8_t first = static_cast<uint8_t>(opcode & 0x1F);
+  const uint8_t last = static_cast<uint8_t>((hw2 >> 11) & 0x1F);
+  il.AddInstruction(il.Intrinsic(
+      {}, SystemIntrinsic::Dbpush,
+      {il.Const(Sizes::LEN32BIT, first), il.Const(Sizes::LEN32BIT, last)}));
+  out_len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool Dbtag::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &out_len,
+                 BN::LowLevelILFunction &il,
+                 BinaryNinja::Architecture * /*arch*/) {
+  const uint16_t hw2 = static_cast<uint16_t>(opcode >> 16);
+  const uint16_t imm_hi = static_cast<uint16_t>((hw2 >> 11) & 0x1F);
+  const uint16_t imm_lo = static_cast<uint16_t>(opcode & 0x1F);
+  const uint16_t imm10 = static_cast<uint16_t>((imm_hi << 5) | imm_lo);
+  il.AddInstruction(il.Intrinsic(
+      {}, SystemIntrinsic::Dbtag,
+      {il.Const(Sizes::LEN32BIT, imm10)}));
+  out_len = Sizes::LEN32BIT;
+  return true;
+}
+
 }  // namespace V850

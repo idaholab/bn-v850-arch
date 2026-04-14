@@ -337,6 +337,12 @@ std::vector<uint32_t> V850E1Architecture::GetAllIntrinsics() {
   for (uint32_t i = BitIntrinsic::Sch0l; i < BitIntrinsic::_END; ++i) {
     out.push_back(i);
   }
+  for (uint32_t i = CacheIntrinsic::Cache; i < CacheIntrinsic::_END; ++i) {
+    out.push_back(i);
+  }
+  for (uint32_t i = SystemIntrinsic::Syscall; i < SystemIntrinsic::_END; ++i) {
+    out.push_back(i);
+  }
   return out;
 }
 
@@ -368,6 +374,18 @@ std::string V850E1Architecture::GetIntrinsicName(const uint32_t intrinsic) {
     case BitIntrinsic::Sch0r:     return "v850.sch0r";
     case BitIntrinsic::Sch1l:     return "v850.sch1l";
     case BitIntrinsic::Sch1r:     return "v850.sch1r";
+    case CacheIntrinsic::Cache:   return "v850.cache";
+    case SystemIntrinsic::Syscall:  return "v850.syscall";
+    case SystemIntrinsic::Dbcp:     return "v850.dbcp";
+    case SystemIntrinsic::Dbhvtrap: return "v850.dbhvtrap";
+    case SystemIntrinsic::Dbpush:   return "v850.dbpush";
+    case SystemIntrinsic::Dbtag:    return "v850.dbtag";
+    case SystemIntrinsic::Est:      return "v850.est";
+    case SystemIntrinsic::Tlbai:    return "v850.tlbai";
+    case SystemIntrinsic::Tlbr:     return "v850.tlbr";
+    case SystemIntrinsic::Tlbs:     return "v850.tlbs";
+    case SystemIntrinsic::Tlbvi:    return "v850.tlbvi";
+    case SystemIntrinsic::Tlbw:     return "v850.tlbw";
     default:                      return "";
   }
 }
@@ -414,6 +432,24 @@ std::vector<BN::NameAndType> V850E1Architecture::GetIntrinsicInputs(
     case BitIntrinsic::Sch1l:
     case BitIntrinsic::Sch1r:
       return {{"value", u32}};
+    case CacheIntrinsic::Cache:
+      return {{"cacheop", u32}, {"ea", u32}};
+    case SystemIntrinsic::Syscall:
+      return {{"vector", u32}};
+    case SystemIntrinsic::Dbtag:
+      return {{"imm10", u32}};
+    case SystemIntrinsic::Dbpush:
+      // Debug push range: first/last GPR in the range, modeled opaquely.
+      return {{"first", u32}, {"last", u32}};
+    case SystemIntrinsic::Dbcp:
+    case SystemIntrinsic::Dbhvtrap:
+    case SystemIntrinsic::Est:
+    case SystemIntrinsic::Tlbai:
+    case SystemIntrinsic::Tlbr:
+    case SystemIntrinsic::Tlbs:
+    case SystemIntrinsic::Tlbvi:
+    case SystemIntrinsic::Tlbw:
+      return {};
     default:
       return {};
   }
