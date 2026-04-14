@@ -1851,6 +1851,37 @@ class CaxiR1R2R3 : public Instruction {
             BinaryNinja::Architecture *arch) override;
 };
 
+// SATADD reg1, reg2, reg3 — Format XI (G3MH p.244).
+class SataddR1R2R3 : public Instruction {
+ public:
+  explicit SataddR1R2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+// SATSUB reg1, reg2, reg3 — Format XI (G3MH p.246).
+class SatsubR1R2R3 : public Instruction {
+ public:
+  explicit SatsubR1R2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+// SATSUBR reg1, reg2, reg3 — Format XI (G3MH p.249).
+class SatsubrR1R2R3 : public Instruction {
+ public:
+  explicit SatsubrR1R2R3(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
 // JARL [reg1], reg3 (Format XI form, G3MH p.197)
 class JarlR1R3 : public Instruction {
  public:
@@ -1953,6 +1984,16 @@ std::optional<std::unique_ptr<Instruction>> ParseFpuSingle(const IsaType &t,
 /* Intrinsic identifiers for FPU ops without a native BN LLIL primitive.
    Wired into V850E1Architecture::GetAllIntrinsics / GetIntrinsicName /
    GetIntrinsicInputs / GetIntrinsicOutputs. */
+namespace BitIntrinsic {
+enum : uint32_t {
+  Sch0l = 0x2000,
+  Sch0r,
+  Sch1l,
+  Sch1r,
+  _END,
+};
+}  // namespace BitIntrinsic
+
 namespace FpuIntrinsic {
 enum : uint32_t {
   MaxfS = 0x1000,
@@ -1960,6 +2001,8 @@ enum : uint32_t {
   RecipfS,
   RsqrtfS,
   RoundfSw,
+  CeilfSw,
+  FloorfSw,
   RoundfSuw,
   TrncfSuw,
   CeilfSuw,

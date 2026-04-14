@@ -228,6 +228,12 @@ PopspRhRt::PopspRhRt(const IsaType &t, const uint8_t len)
     : Instruction(t, len) {}
 CaxiR1R2R3::CaxiR1R2R3(const IsaType &t, const uint8_t len)
     : Instruction(t, len) {}
+SataddR1R2R3::SataddR1R2R3(const IsaType &t, const uint8_t len)
+    : Instruction(t, len) {}
+SatsubR1R2R3::SatsubR1R2R3(const IsaType &t, const uint8_t len)
+    : Instruction(t, len) {}
+SatsubrR1R2R3::SatsubrR1R2R3(const IsaType &t, const uint8_t len)
+    : Instruction(t, len) {}
 JarlR1R3::JarlR1R3(const IsaType &t, const uint8_t len)
     : Instruction(t, len) {}
 Snooze::Snooze(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
@@ -468,6 +474,28 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
                 return std::make_unique<HswR2R3>(t, Sizes::LEN32BIT);
               default:
                 return std::nullopt;
+            }
+          }
+          // hw2[10:5] = 011000 (CMOV imm) / 011001 (CMOV reg) both match the
+          // outer OPCODE_BIT_{2,3,5} mask and share hw1[10:6]=111111 with
+          // Format XI SATADD/SATSUB (3-operand). SATADD-3 / SATSUB-3 are
+          // distinguished by hw2[10:0]:
+          //   01110111010 — SATADD reg1, reg2, reg3 (G3MH p.244)
+          //   01110011010 — SATSUB reg1, reg2, reg3 (G3MH p.246)
+          //   01111001010 — SATSUBR reg1, reg2, reg3 (G3MH p.249)
+          // These collide with CMOV under the old single-bit discriminator;
+          // peek at the Format XI low 11-bit sub-opcode first.
+          {
+            const uint16_t hw2_low11 =
+                static_cast<uint16_t>((opcode >> 16) & 0x07FF);
+            if (hw2_low11 == 0b01110111010) {
+              return std::make_unique<SataddR1R2R3>(t, Sizes::LEN32BIT);
+            }
+            if (hw2_low11 == 0b01110011010) {
+              return std::make_unique<SatsubR1R2R3>(t, Sizes::LEN32BIT);
+            }
+            if (hw2_low11 == 0b01111001010) {
+              return std::make_unique<SatsubrR1R2R3>(t, Sizes::LEN32BIT);
             }
           }
           if (opcode >> 16 & OpcodeFields::OPCODE_BIT_6) {

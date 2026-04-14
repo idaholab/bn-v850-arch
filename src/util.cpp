@@ -304,8 +304,12 @@ BN::ExprId ConditionToIL(const uint8_t condition, BN::LowLevelILFunction &il) {
     case Conditions::CONDITION_CODE_T:
       return il.Const(Sizes::LEN64BIT, 1);  // unconditional
     case Conditions::CONDITION_CODE_SA:
-      // if SAT flag set - behavior not yet implemented, TODO
-      return il.Unimplemented();
+      // BSA / NSA — branch if SAT flag set. SAT is sticky per G3MH §7
+      // (cumulative; cleared only by LDSR of PSW). Compare the raw flag
+      // bit against zero; PSW.SAT is modelled as a standalone flag.
+      return il.CompareNotEqual(
+          Sizes::LEN8BIT, il.Flag(Flags::FLAG_SAT_SATURATED),
+          il.Const(Sizes::LEN8BIT, 0));
     case Conditions::CONDITION_CODE_LT:
       return il.FlagCondition(LLFC_SLT);
     case Conditions::CONDITION_CODE_GE:

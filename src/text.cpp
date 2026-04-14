@@ -669,13 +669,8 @@ bool Text_V_JARL_JR_VII_LDBU_XIII_PREPARE(
           return true;
 
         case Opcodes::PREPARE_LOAD_SIGN_EXTENDED_IMM16:
-          // Sign-extend 16-bit immediate to 32-bit // TODO make functions and
-          // use everywhere
-          if (imm & (1 << 15)) {  // MSB is set
-            imm = static_cast<int32_t>(0xFFFF0000) | opcode >> 32;
-          } else {  // MSB is not set
-            imm = 0x00000000 | opcode >> 32;
-          }
+          imm = static_cast<int32_t>(
+              static_cast<int16_t>(static_cast<uint16_t>(opcode >> 32)));
           std::snprintf(buf, sizeof(buf), "%#x", imm);
           result.emplace_back(IntegerToken, buf, imm, sizeof(imm));
 
@@ -1355,8 +1350,13 @@ bool Format_Ext_Text(const uint64_t opcode, size_t &len,
             // Text format: mul imm9, reg2, reg3
             ITEXT("mul")
           }
-          std::snprintf(buf, sizeof(buf), "%#x", imm9);
-          result.emplace_back(IntegerToken, buf, imm9, sizeof(imm9));
+          // Format XII imm9 is split: low 5 bits in hw1[4:0], high 4 bits
+          // in hw2[5:2]. ExtractTypeXIIImm9 only returns the high nibble
+          // shifted into position; combine with imm5 for the full value.
+          const uint16_t imm9_full =
+              static_cast<uint16_t>(imm9 | imm5);
+          std::snprintf(buf, sizeof(buf), "%#x", imm9_full);
+          result.emplace_back(IntegerToken, buf, imm9_full, sizeof(imm9_full));
           result.emplace_back(OperandSeparatorToken, ", ");
 
           std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
@@ -2354,6 +2354,38 @@ bool PopspRhRt::Text(const uint64_t opcode, uint64_t addr, size_t &len,
   EmitRegRegPair("popsp", rh, rt, result);
   len = Sizes::LEN32BIT;
   return true;
+}
+
+static bool TextSatFmtXi(const char *mnemonic, uint64_t opcode, size_t &len,
+                         std::vector<BN::InstructionTextToken> &result) {
+  char buf[32];
+  const auto reg1 = ExtractReg1OpcodeField(opcode);
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  ITEXT(mnemonic)
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg1));
+  result.emplace_back(RegisterToken, buf, reg1);
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
+  result.emplace_back(RegisterToken, buf, reg2);
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg3));
+  result.emplace_back(RegisterToken, buf, reg3);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool SataddR1R2R3::Text(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                        std::vector<BN::InstructionTextToken> &result) {
+  return TextSatFmtXi("satadd", opcode, len, result);
+}
+bool SatsubR1R2R3::Text(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                        std::vector<BN::InstructionTextToken> &result) {
+  return TextSatFmtXi("satsub", opcode, len, result);
+}
+bool SatsubrR1R2R3::Text(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                         std::vector<BN::InstructionTextToken> &result) {
+  return TextSatFmtXi("satsubr", opcode, len, result);
 }
 
 bool CaxiR1R2R3::Text(const uint64_t opcode, uint64_t addr, size_t &len,

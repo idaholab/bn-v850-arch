@@ -1,0 +1,11 @@
+build/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+test/rosetta/CMakeFiles/
+test/rosetta/Makefile
+test/rosetta/cmake_install.cmake
+test/rosetta/fixtures/*.obj
+test/rosetta/fixtures/*.abs
+test/rosetta/fixtures/*.asm

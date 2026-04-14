@@ -180,7 +180,8 @@ BNRegisterInfo V850E1Architecture::GetRegisterInfo(const uint32_t rid) {
   if (rid == Registers::FPSR) {
     return RegisterInfo(Registers::FPSR, 0, Sizes::LEN32BIT);
   }
-  // TODO, also add support for float regs
+  // G3MH §3.4.1: FPU reuses the r0..r31 GPR file; no separate FR* register
+  // bank exists. Unknown rids are truly invalid.
   return RegisterInfo(0, 0, 0);
 }
 
@@ -215,7 +216,10 @@ BNFlagRole V850E1Architecture::GetFlagRole(const uint32_t flag,
       return OverflowFlagRole;
     case Flags::FLAG_CY_CARRY:
       return CarryFlagRole;
-    // TODO define all the SpecialFlagRole roles
+    // SAT is sticky/cumulative (G3MH §7); ID/EP/NP are PSW state bits used
+    // by exception machinery. None have a standard BN flag role — all four
+    // intentionally fall through to SpecialFlagRole so BN treats them as
+    // opaque side-effects that lifts must read/write explicitly.
     case Flags::FLAG_SAT_SATURATED:
     case Flags::FLAG_ID_INTERRUPT_DISABLE:
     case Flags::FLAG_EP_EXCEPTION_PENDING:
@@ -294,8 +298,10 @@ std::vector<uint32_t> V850E1Architecture::GetFlagsRequiredForFlagCondition(
     case LLFC_SGT:
       return std::vector<uint32_t>{Flags::FLAG_Z_ZERO, Flags::FLAG_S_SIGN,
                                    Flags::FLAG_OV_OVERFLOW};
-    // TODO how deal with SAT?
-    // TODO float comparisons. Are these flags even needed?
+    // BSa / NSa (branch-if-SAT) are emitted via CONDITION_CODE_SA and lifted
+    // directly in util.cpp as a Flag() compare — no LLFC_* mapping needed.
+    // Float comparisons are lifted via the v850.cmpf.s intrinsic which
+    // updates FPSR; BN's LLFC_F* paths are unused.
     case LLFC_FE:
     case LLFC_FNE:
     case LLFC_FLT:
@@ -328,6 +334,9 @@ std::vector<uint32_t> V850E1Architecture::GetAllIntrinsics() {
   for (uint32_t i = FpuIntrinsic::MaxfS; i < FpuIntrinsic::_END; ++i) {
     out.push_back(i);
   }
+  for (uint32_t i = BitIntrinsic::Sch0l; i < BitIntrinsic::_END; ++i) {
+    out.push_back(i);
+  }
   return out;
 }
 
@@ -338,6 +347,8 @@ std::string V850E1Architecture::GetIntrinsicName(const uint32_t intrinsic) {
     case FpuIntrinsic::RecipfS:   return "v850.recipf.s";
     case FpuIntrinsic::RsqrtfS:   return "v850.rsqrtf.s";
     case FpuIntrinsic::RoundfSw:  return "v850.roundf.sw";
+    case FpuIntrinsic::CeilfSw:   return "v850.ceilf.sw";
+    case FpuIntrinsic::FloorfSw:  return "v850.floorf.sw";
     case FpuIntrinsic::RoundfSuw: return "v850.roundf.suw";
     case FpuIntrinsic::TrncfSuw:  return "v850.trncf.suw";
     case FpuIntrinsic::CeilfSuw:  return "v850.ceilf.suw";
@@ -352,6 +363,10 @@ std::string V850E1Architecture::GetIntrinsicName(const uint32_t intrinsic) {
     case FpuIntrinsic::FnmsfS:    return "v850.fnmsf.s";
     case FpuIntrinsic::CmpfS:     return "v850.cmpf.s";
     case FpuIntrinsic::Trfsr:     return "v850.trfsr";
+    case BitIntrinsic::Sch0l:     return "v850.sch0l";
+    case BitIntrinsic::Sch0r:     return "v850.sch0r";
+    case BitIntrinsic::Sch1l:     return "v850.sch1l";
+    case BitIntrinsic::Sch1r:     return "v850.sch1r";
     default:                      return "";
   }
 }
@@ -367,6 +382,8 @@ std::vector<BN::NameAndType> V850E1Architecture::GetIntrinsicInputs(
     case FpuIntrinsic::RecipfS:
     case FpuIntrinsic::RsqrtfS:
     case FpuIntrinsic::RoundfSw:
+    case FpuIntrinsic::CeilfSw:
+    case FpuIntrinsic::FloorfSw:
     case FpuIntrinsic::RoundfSuw:
     case FpuIntrinsic::TrncfSuw:
     case FpuIntrinsic::CeilfSuw:
@@ -387,6 +404,11 @@ std::vector<BN::NameAndType> V850E1Architecture::GetIntrinsicInputs(
       return {{"fcond", u32}, {"a", f32}, {"b", f32}, {"fcbit", u32}};
     case FpuIntrinsic::Trfsr:
       return {{"fcbit", u32}, {"fpsr", u32}};
+    case BitIntrinsic::Sch0l:
+    case BitIntrinsic::Sch0r:
+    case BitIntrinsic::Sch1l:
+    case BitIntrinsic::Sch1r:
+      return {{"value", u32}};
     default:
       return {};
   }
@@ -409,6 +431,8 @@ V850E1Architecture::GetIntrinsicOutputs(const uint32_t intrinsic) {
     case FpuIntrinsic::CvtfHs:
       return {BN::Confidence<BN::Ref<BN::Type>>(f32)};
     case FpuIntrinsic::RoundfSw:
+    case FpuIntrinsic::CeilfSw:
+    case FpuIntrinsic::FloorfSw:
       return {BN::Confidence<BN::Ref<BN::Type>>(BN::Type::IntegerType(4, true))};
     case FpuIntrinsic::RoundfSuw:
     case FpuIntrinsic::TrncfSuw:
@@ -421,6 +445,11 @@ V850E1Architecture::GetIntrinsicOutputs(const uint32_t intrinsic) {
       return {BN::Confidence<BN::Ref<BN::Type>>(u32)};  // updated FPSR
     case FpuIntrinsic::Trfsr:
       return {};  // writes PSW.Z side-effect; modelled via flag write in lift
+    case BitIntrinsic::Sch0l:
+    case BitIntrinsic::Sch0r:
+    case BitIntrinsic::Sch1l:
+    case BitIntrinsic::Sch1r:
+      return {BN::Confidence<BN::Ref<BN::Type>>(u32)};  // position + 1, or 0
     default:
       return {};
   }

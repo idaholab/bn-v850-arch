@@ -231,7 +231,7 @@ bool Lift_I_SATSUBR_ZXB(const uint64_t opcode, uint64_t addr, size_t &len,
     BN::ExprId result = il.Sub(
         Sizes::LEN64BIT,  // Calculate result of subtract operation
         il.Register(Sizes::LEN32BIT, reg1), il.Register(Sizes::LEN32BIT, reg2),
-        Flags::FLAGS_WRITE_SAT_CY_OV_S_Z);  // TODO: implement SAT flag behavior
+        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches below
     il.AddInstruction(  // Check whether maximum negative value is exceeded
         il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
                                        il.Const(Sizes::LEN32BIT, 0x80000000)),
@@ -307,7 +307,7 @@ bool Lift_I_SATSUB_SXB(const uint64_t opcode, uint64_t addr, size_t &len,
     BN::ExprId result = il.Sub(
         Sizes::LEN64BIT,  // Calculate result of subtract operation
         il.Register(Sizes::LEN32BIT, reg2), il.Register(Sizes::LEN32BIT, reg1),
-        Flags::FLAGS_WRITE_SAT_CY_OV_S_Z);  // TODO: implement SAT flag behavior
+        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches below
     il.AddInstruction(  // Check whether maximum negative value is exceeded
         il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
                                        il.Const(Sizes::LEN32BIT, 0x80000000)),
@@ -381,7 +381,7 @@ bool Lift_I_SATADD_ZXH(const uint64_t opcode, uint64_t addr, size_t &len,
     BN::ExprId result = il.Add(
         Sizes::LEN64BIT,  // Calculate result of subtract operation
         il.Register(Sizes::LEN32BIT, reg2), il.Register(Sizes::LEN32BIT, reg1),
-        Flags::FLAGS_WRITE_SAT_CY_OV_S_Z);  // TODO: implement SAT flag behavior
+        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches below
 
     il.AddInstruction(  // Check whether maximum negative value is exceeded
         il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
@@ -730,7 +730,7 @@ bool Lift_II(const uint64_t opcode, uint64_t addr, size_t &len,
               Sizes::LEN64BIT,  // Calculate result of subtract operation
               il.Register(Sizes::LEN32BIT, reg2),
               il.SignExtend(Sizes::LEN32BIT, il.Const(Sizes::LEN8BIT, imm5)),
-              Flags::FLAGS_WRITE_SAT_CY_OV_S_Z);  // TODO: implement SAT flag
+              Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches
                                                   // behavior
 
           il.AddInstruction(  // Check whether maximum negative value is
@@ -1308,7 +1308,7 @@ bool Lift_VI_MOVHI_SATSUBI_XIII_DISPOSE(const uint64_t opcode, uint64_t addr,
       BN::ExprId result = il.Sub(
           Sizes::LEN32BIT, reg1_il,
           il.SignExtend(Sizes::LEN32BIT, il.Const(Sizes::LEN32BIT, imm16)),
-          Flags::FLAGS_WRITE_SAT_CY_OV_S_Z);  // TODO: implement SAT flag
+          Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches
                                               // behavior
 
       il.AddInstruction(  // Check whether maximum negative value is exceeded
@@ -3520,6 +3520,70 @@ bool PopspRhRt::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
  * intrinsic, but the visible data-flow is correct. Flag side-effects are
  * approximated by leaving them to the decompiler (no flag writes emitted).
  */
+// Format XI saturated arithmetic (3-operand) — G3MH p.244/246/249.
+// reg3 = saturated(op(reg1, reg2)). Stickiness modelled by only setting
+// SAT on the saturation branches (matches 2-operand SATADD/SATSUB lifts).
+static bool LiftSatFmtXi(uint64_t opcode, size_t &len,
+                         BN::LowLevelILFunction &il, bool is_add,
+                         bool reverse) {
+  const auto reg1 = ExtractReg1OpcodeField(opcode);
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  BN::LowLevelILLabel sat_pos_true, sat_pos_false, sat_neg_true,
+      sat_neg_false, done;
+  BN::ExprId lhs = il.Register(Sizes::LEN32BIT, reverse ? reg1 : reg2);
+  BN::ExprId rhs = il.Register(Sizes::LEN32BIT, reverse ? reg2 : reg1);
+  BN::ExprId result =
+      is_add ? il.Add(Sizes::LEN64BIT, il.Register(Sizes::LEN32BIT, reg1),
+                      il.Register(Sizes::LEN32BIT, reg2),
+                      Flags::FLAGS_WRITE_CY_OV_S_Z)
+             : il.Sub(Sizes::LEN64BIT, lhs, rhs,
+                      Flags::FLAGS_WRITE_CY_OV_S_Z);
+  il.AddInstruction(il.If(
+      il.CompareSignedLessThan(Sizes::LEN64BIT, result,
+                               il.Const(Sizes::LEN32BIT, 0x80000000)),
+      sat_neg_true, sat_neg_false));
+  il.MarkLabel(sat_neg_true);
+  il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
+                                   il.Const(Sizes::LEN32BIT, 0x80000000)));
+  il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
+                               il.Const(Sizes::LEN8BIT, 1)));
+  il.AddInstruction(il.Goto(done));
+  il.MarkLabel(sat_neg_false);
+  il.AddInstruction(il.If(
+      il.CompareSignedGreaterThan(Sizes::LEN64BIT, result,
+                                  il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)),
+      sat_pos_true, sat_pos_false));
+  il.MarkLabel(sat_pos_true);
+  il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
+                                   il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
+  il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
+                               il.Const(Sizes::LEN8BIT, 1)));
+  il.AddInstruction(il.Goto(done));
+  il.MarkLabel(sat_pos_false);
+  il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, result));
+  il.AddInstruction(il.Goto(done));
+  il.MarkLabel(done);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
+bool SataddR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                        BN::LowLevelILFunction &il,
+                        BinaryNinja::Architecture * /*arch*/) {
+  return LiftSatFmtXi(opcode, len, il, /*is_add=*/true, /*reverse=*/false);
+}
+bool SatsubR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                        BN::LowLevelILFunction &il,
+                        BinaryNinja::Architecture * /*arch*/) {
+  return LiftSatFmtXi(opcode, len, il, /*is_add=*/false, /*reverse=*/false);
+}
+bool SatsubrR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                         BN::LowLevelILFunction &il,
+                         BinaryNinja::Architecture * /*arch*/) {
+  return LiftSatFmtXi(opcode, len, il, /*is_add=*/false, /*reverse=*/true);
+}
+
 bool CaxiR1R2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                       BN::LowLevelILFunction &il,
                       BinaryNinja::Architecture *arch) {
@@ -3611,35 +3675,70 @@ bool RieX::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
   return true;
 }
 
-/* SCH0L / SCH0R / SCH1L / SCH1R — bit-search instructions.
+/* SCH0L / SCH0R / SCH1L / SCH1R — bit-search instructions (Format IX).
  *
- * BN LLIL lacks a direct find-first-bit primitive and the plugin currently
- * has no intrinsic registration infrastructure (see arch flag notes), so
- * lift these as Unimplemented for now. Decoding + disassembly text is
- * still correct, so analysis keeps walking past them. */
-bool Sch0lR2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
-                     BN::LowLevelILFunction &il,
-                     BinaryNinja::Architecture *arch) {
+ * Per RH850 G3MH §7 (SCH0L/SCH0R/SCH1L/SCH1R, pp.251–254):
+ *   GR[reg3] = (number of non-matching bits before first matching bit) + 1
+ *              counted from MSB (L-variants) or LSB (R-variants),
+ *              searching for 0 (SCH0*) or 1 (SCH1*).
+ *   If no matching bit is found: reg3 = 0, Z = 1.
+ *   CY = 1 iff the match is at the furthest bit (i.e. reg3 == 32).
+ *   S = 0, OV = 0, SAT unchanged.
+ *
+ * LLIL has no native find-first-bit primitive, so lift to a registered
+ * intrinsic (BitIntrinsic::Sch*) with reg3 as the output and reg2 as the
+ * input. The PSW flag side-effects are modelled explicitly after the
+ * intrinsic so Binary Ninja's data-flow can still reason about callers
+ * that branch on CY/Z (e.g. the common "is value zero?" idiom).
+ */
+static void LiftSchCommon(const uint64_t opcode, size_t &len,
+                          BN::LowLevelILFunction &il, uint32_t intrinsic_id) {
   len = Sizes::LEN32BIT;
-  UNIMPLEMENTED
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  constexpr size_t W = Sizes::LEN32BIT;
+
+  il.AddInstruction(il.Intrinsic(
+      {BN::RegisterOrFlag::Register(reg3)}, intrinsic_id,
+      {il.Register(W, reg2)}));
+
+  // S, OV are always cleared.
+  il.AddInstruction(il.SetFlag(Flags::FLAG_S_SIGN, il.Const(0, 0)));
+  il.AddInstruction(il.SetFlag(Flags::FLAG_OV_OVERFLOW, il.Const(0, 0)));
+  // Z = (reg3 == 0) — "not found".
+  il.AddInstruction(il.SetFlag(
+      Flags::FLAG_Z_ZERO,
+      il.CompareEqual(W, il.Register(W, reg3), il.Const(W, 0))));
+  // CY = (reg3 == 32) — match at the farthest bit (MSB for SCH*R / LSB for
+  // SCH*L). 32 also happens to be the max legal value.
+  il.AddInstruction(il.SetFlag(
+      Flags::FLAG_CY_CARRY,
+      il.CompareEqual(W, il.Register(W, reg3), il.Const(W, 32))));
 }
-bool Sch0rR2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+
+bool Sch0lR2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
                      BN::LowLevelILFunction &il,
-                     BinaryNinja::Architecture *arch) {
-  len = Sizes::LEN32BIT;
-  UNIMPLEMENTED
+                     BinaryNinja::Architecture * /*arch*/) {
+  LiftSchCommon(opcode, len, il, BitIntrinsic::Sch0l);
+  return true;
 }
-bool Sch1lR2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+bool Sch0rR2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
                      BN::LowLevelILFunction &il,
-                     BinaryNinja::Architecture *arch) {
-  len = Sizes::LEN32BIT;
-  UNIMPLEMENTED
+                     BinaryNinja::Architecture * /*arch*/) {
+  LiftSchCommon(opcode, len, il, BitIntrinsic::Sch0r);
+  return true;
 }
-bool Sch1rR2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
+bool Sch1lR2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
                      BN::LowLevelILFunction &il,
-                     BinaryNinja::Architecture *arch) {
-  len = Sizes::LEN32BIT;
-  UNIMPLEMENTED
+                     BinaryNinja::Architecture * /*arch*/) {
+  LiftSchCommon(opcode, len, il, BitIntrinsic::Sch1l);
+  return true;
+}
+bool Sch1rR2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                     BN::LowLevelILFunction &il,
+                     BinaryNinja::Architecture * /*arch*/) {
+  LiftSchCommon(opcode, len, il, BitIntrinsic::Sch1r);
+  return true;
 }
 /* --- Single-precision FPU lifting --- */
 
@@ -3720,16 +3819,12 @@ bool FpuSingle::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
            {BN::RegisterOrFlag::Register(reg3)});
       break;
     case FpuOp::CeilfSw:
-      /* ceil(x) = -floor(-x). No BN primitive -- use intrinsic name
-         "roundf.sw" family isn't appropriate. Spell out with CmpfS-style
-         intrinsic MaxfS tag would be wrong; add dedicated? Keep simple:
-         reuse RoundfSw fallback marker via Unimplemented wrap. */
-      il.AddInstruction(
-          il.SetRegister(W, reg3, il.Unimplemented()));
+      Intr(FpuIntrinsic::CeilfSw, {Ra(reg2)},
+           {BN::RegisterOrFlag::Register(reg3)});
       break;
     case FpuOp::FloorfSw:
-      il.AddInstruction(
-          il.SetRegister(W, reg3, il.Unimplemented()));
+      Intr(FpuIntrinsic::FloorfSw, {Ra(reg2)},
+           {BN::RegisterOrFlag::Register(reg3)});
       break;
 
     /* ---- float -> unsigned-int 32 conversions (all intrinsic) ---- */

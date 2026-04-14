@@ -569,8 +569,12 @@ constexpr uint8_t SUBOP_IX_BINS_LO = 0b001101;  // msb <  16, lsb <  16
 
 /* Format XIII */
 // 5-bit opcode is bits 6-10 of word 1
-constexpr uint8_t OP_XIII_DISPOSE =
-    0b11001;  // TODO both dispose and prepare have 2 forms
+// Format XIII opcode bits[6..10] of hw1. DISPOSE uses forms (1) and (2):
+//   (1) DISPOSE imm5, list12            — plain stack-frame delete
+//   (2) DISPOSE imm5, list12, [reg1]    — delete + jump to GR[reg1]
+// Both share OP_XIII_DISPOSE; form (2) is distinguished via reg1_field != 0.
+// PREPARE forms are keyed off SUBOP_XIII_PREPARE_{001,011} below.
+constexpr uint8_t OP_XIII_DISPOSE = 0b11001;
 
 // Bits 16-18 of instruction halfword 2
 constexpr uint8_t SUBOP_XIII_PREPARE_001 = 0b001;
