@@ -509,6 +509,17 @@ class V850CCRHCallingConvention final : public BN::CallingConvention {
 
 extern "C" {
 BN_DECLARE_CORE_ABI_VERSION
+
+// Ensure view_elf / view_macho / view_pe plugins initialize before we run
+// CorePluginInit; without this, BinaryViewType::RegisterArchitecture("ELF",
+// ...) silently no-ops because the "ELF" BinaryViewType isn't registered
+// yet, and BN's ELF loader falls back to armv7 on e_machine=36 (V800).
+BINARYNINJAPLUGIN void CorePluginDependencies() {
+  BN::AddOptionalPluginDependency("view_elf");
+  BN::AddOptionalPluginDependency("view_macho");
+  BN::AddOptionalPluginDependency("view_pe");
+}
+
 BINARYNINJAPLUGIN bool CorePluginInit() {
   BN::Architecture *V850E1 = new V850::V850E1Architecture("V850");
   BN::Architecture::Register(V850E1);
@@ -517,6 +528,16 @@ BINARYNINJAPLUGIN bool CorePluginInit() {
       new V850::V850CCRHCallingConvention(V850E1);
   V850E1->RegisterCallingConvention(cc);
   V850E1->SetDefaultCallingConvention(cc);
+
+  // Bind the ELF loader's e_machine=36 (EM_V800, NEC V800/V850) to our arch
+  // so BN stops silently falling back to armv7 on V850 ELFs (which also
+  // rewrites the p_vaddr mappings). Use the architecture's own standalone
+  // platform so ELFs load with a sensible default.
+  constexpr uint32_t EM_V800 = 36;
+  BN::BinaryViewType::RegisterArchitecture("ELF", EM_V800, LittleEndian,
+                                           V850E1);
+  BN::BinaryViewType::RegisterPlatform("ELF", EM_V800,
+                                       V850E1->GetStandalonePlatform());
 
   return true;
 }
