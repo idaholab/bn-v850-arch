@@ -1829,6 +1829,29 @@ class FpuSingle : public Instruction {
             BinaryNinja::Architecture *arch) override;
 };
 
+/* Double-precision FPU stub (Format F:I, category ∈ {0b101, 0b110, 0b111}).
+ *
+ * G3MH §7 documents ~30 double-precision FPU ops (ADDF.D, SUBF.D, MULF.D,
+ * DIVF.D, MAXF.D, MINF.D, SQRTF.D, ABSF.D, NEGF.D, CMPF.D, CMOVF.D, FMA
+ * family, plus the full D<->{S,W,L,UW,UL,H} conversion matrix). Rather
+ * than enumerate each encoding, this class captures *any* cat∈{5,6,7}
+ * encoding and lifts it as an opaque `v850.fpud` intrinsic that consumes
+ * the source register pair and produces the destination register pair.
+ * This keeps decode coverage at 100% on firmwares that touch doubles
+ * (Ford PSCM G3MH uses FPU.D in a handful of steering-geometry math
+ * routines) without us pretending to know per-op semantics we haven't
+ * validated against the PDF yet.
+ */
+class FpuDouble : public Instruction {
+ public:
+  explicit FpuDouble(const IsaType &t, uint8_t len);
+  bool Text(uint64_t opcode, uint64_t addr, size_t &len,
+            std::vector<BN::InstructionTextToken> &result) override;
+  bool Lift(uint64_t opcode, uint64_t addr, size_t &len,
+            BN::LowLevelILFunction &il,
+            BinaryNinja::Architecture *arch) override;
+};
+
 // POPSP rh-rt (Format XI, G3MH p.232)
 class PopspRhRt : public Instruction {
  public:
@@ -2017,6 +2040,8 @@ enum : uint32_t {
   FnmsfS,
   CmpfS,
   Trfsr,
+  // Generic double-precision FPU fallback (see FpuDouble class comment).
+  FpuD,
   _END
 };
 }  // namespace FpuIntrinsic

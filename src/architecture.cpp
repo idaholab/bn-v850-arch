@@ -363,6 +363,7 @@ std::string V850E1Architecture::GetIntrinsicName(const uint32_t intrinsic) {
     case FpuIntrinsic::FnmsfS:    return "v850.fnmsf.s";
     case FpuIntrinsic::CmpfS:     return "v850.cmpf.s";
     case FpuIntrinsic::Trfsr:     return "v850.trfsr";
+    case FpuIntrinsic::FpuD:      return "v850.fpud";
     case BitIntrinsic::Sch0l:     return "v850.sch0l";
     case BitIntrinsic::Sch0r:     return "v850.sch0r";
     case BitIntrinsic::Sch1l:     return "v850.sch1l";
@@ -404,6 +405,10 @@ std::vector<BN::NameAndType> V850E1Architecture::GetIntrinsicInputs(
       return {{"fcond", u32}, {"a", f32}, {"b", f32}, {"fcbit", u32}};
     case FpuIntrinsic::Trfsr:
       return {{"fcbit", u32}, {"fpsr", u32}};
+    case FpuIntrinsic::FpuD:
+      // Generic double-precision op: two source GPRs (typically the lower
+      // halves of register pairs) feeding an opaque FPU.D result.
+      return {{"a", u32}, {"b", u32}};
     case BitIntrinsic::Sch0l:
     case BitIntrinsic::Sch0r:
     case BitIntrinsic::Sch1l:
@@ -445,6 +450,8 @@ V850E1Architecture::GetIntrinsicOutputs(const uint32_t intrinsic) {
       return {BN::Confidence<BN::Ref<BN::Type>>(u32)};  // updated FPSR
     case FpuIntrinsic::Trfsr:
       return {};  // writes PSW.Z side-effect; modelled via flag write in lift
+    case FpuIntrinsic::FpuD:
+      return {BN::Confidence<BN::Ref<BN::Type>>(u32)};  // opaque result
     case BitIntrinsic::Sch0l:
     case BitIntrinsic::Sch0r:
     case BitIntrinsic::Sch1l:

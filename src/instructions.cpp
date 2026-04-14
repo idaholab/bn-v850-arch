@@ -19,6 +19,8 @@ Instruction::Instruction(const IsaType &t, const uint8_t len) {
 
 IsaType Instruction::GetIsaType() const { return this->isa_type; }
 
+FpuDouble::FpuDouble(const IsaType &t, const uint8_t len)
+    : Instruction(t, len) {}
 FpuSingle::FpuSingle(const IsaType &t, const uint8_t len, const FpuOp op)
     : Instruction(t, len), op(op) {}
 
@@ -887,6 +889,11 @@ std::optional<std::unique_ptr<Instruction>> ParseFpuSingle(
   const auto subop = static_cast<uint8_t>(hw2 & 0b111111);
   const auto R = static_cast<uint8_t>(opcode & 0b11111);
 
+  if (category == 0b101 || category == 0b110 || category == 0b111) {
+    // Double-precision FPU (G3MH §7, pp.315-400). Captured as an opaque
+    // intrinsic by FpuDouble until each sub-op gets a proper per-op lift.
+    return std::make_unique<FpuDouble>(t, Sizes::LEN32BIT);
+  }
   if (category != 0b100) {
     return std::nullopt;
   }

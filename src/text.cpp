@@ -2545,6 +2545,35 @@ void PushInt(std::vector<BN::InstructionTextToken> &result, uint32_t v) {
 
 }  // namespace
 
+bool FpuDouble::Text(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                     std::vector<BN::InstructionTextToken> &result) {
+  char buf[32];
+  const auto hw2 = static_cast<uint16_t>(opcode >> 16);
+  const auto category = static_cast<uint8_t>((hw2 >> 8) & 0b111);
+  const auto type = static_cast<uint8_t>((hw2 >> 6) & 0b11);
+  const auto subop = static_cast<uint8_t>(hw2 & 0b111111);
+  const auto reg1 = ExtractReg1OpcodeField(opcode);
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  // Render as `fpud.<cat>_<type>_<subop> reg1, reg2, reg3` so operators
+  // can still see the field breakdown in case a specific encoding turns
+  // out to matter for a given firmware; per-op lifts can be added later
+  // and will replace this generic path.
+  std::snprintf(buf, sizeof(buf), "fpud.%u_%u_%02x",
+                category, type, subop);
+  ITEXT(buf)
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg1));
+  result.emplace_back(RegisterToken, buf, reg1);
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg2));
+  result.emplace_back(RegisterToken, buf, reg2);
+  result.emplace_back(OperandSeparatorToken, ", ");
+  std::snprintf(buf, sizeof(buf), "%s", RegToStr(reg3));
+  result.emplace_back(RegisterToken, buf, reg3);
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
 bool FpuSingle::Text(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
                      std::vector<BN::InstructionTextToken> &result) {
   const auto reg1 = ExtractReg1OpcodeField(opcode);

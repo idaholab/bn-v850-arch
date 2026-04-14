@@ -3742,6 +3742,27 @@ bool Sch1rR2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
 }
 /* --- Single-precision FPU lifting --- */
 
+bool FpuDouble::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
+                     BN::LowLevelILFunction &il,
+                     BinaryNinja::Architecture * /*arch*/) {
+  // Generic double-precision FPU lift. Double-precision operands live in
+  // register pairs {rN, rN+1} on RH850 (even N), but we don't know which
+  // operand is source vs destination without per-op knowledge, so we model
+  // it conservatively as "reads reg1/reg2, writes reg3", matching how the
+  // single-precision intrinsics in this plugin behave. Per-op correct
+  // lifts will supersede this as they land.
+  constexpr size_t W = Sizes::LEN32BIT;
+  const auto reg1 = ExtractReg1OpcodeField(opcode);
+  const auto reg2 = ExtractReg2OpcodeField(opcode);
+  const auto reg3 = ExtractReg3OpcodeField(opcode);
+  il.AddInstruction(il.Intrinsic(
+      {BN::RegisterOrFlag::Register(reg3)},
+      FpuIntrinsic::FpuD,
+      {il.Register(W, reg1), il.Register(W, reg2)}));
+  len = Sizes::LEN32BIT;
+  return true;
+}
+
 bool FpuSingle::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
                      BN::LowLevelILFunction &il,
                      BN::Architecture * /*arch*/) {
