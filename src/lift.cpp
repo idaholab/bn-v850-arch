@@ -892,37 +892,27 @@ bool Lift_III(const uint64_t opcode, uint64_t addr, size_t &len,
       return false;
   }
 
-  bool indirect;
-  BNLowLevelILLabel true_label, false_label;
-  if (t) {
-    indirect = false;
-    true_label = *t;
-
-  } else {
-    indirect = true;
-    true_label = BN::LowLevelILLabel();
-  }
-
+  // For each branch direction: if the target address already has a known
+  // BN label, use that label by reference (it's marked at the target).
+  // Otherwise use a local label that we MarkLabel + Jump from below.
   BN::ExprId dest_if_false = il.Const(Sizes::LEN32BIT, addr + Sizes::LEN16BIT);
   BNLowLevelILLabel *f = il.GetLabelForAddress(arch, dest_if_false);
-  bool found_false_label;
-  if (f) {
-    found_false_label = true;
-    false_label = *f;
-  } else {
-    found_false_label = false;
-    false_label = BN::LowLevelILLabel();
-  }
+  BN::LowLevelILLabel local_true_label, local_false_label;
+  const bool indirect_true = (t == nullptr);
+  const bool indirect_false = (f == nullptr);
 
-  il.AddInstruction(il.If(conditionIL, true_label, false_label));
+  // il.If() takes references; pass the pointed-to label or the local one.
+  il.AddInstruction(il.If(conditionIL,
+                          t ? *t : local_true_label,
+                          f ? *f : local_false_label));
 
-  if (indirect) {
-    il.MarkLabel(true_label);
+  if (indirect_true) {
+    il.MarkLabel(local_true_label);
     il.AddInstruction(il.Jump(dest_if_true));
   }
 
-  if (!found_false_label) {
-    il.MarkLabel(false_label);
+  if (indirect_false) {
+    il.MarkLabel(local_false_label);
   }
 
   len = Sizes::LEN16BIT;
