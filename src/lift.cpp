@@ -4083,22 +4083,78 @@ bool StwR3Disp23R1::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                         /*aligned=*/true);
 }
 
-/* TODO: ld.dw / st.dw operate on a V850E3 register pair (R2731pairEx).
- * Accurate lifting requires the reg-pair convention to be decided. Mark
- * as Unimplemented for now so decompilation surfaces the instruction
- * without silently lifting wrong semantics. */
+/* LD.DW disp23[reg1], reg3
+ *
+ * RH850G3KH Software Manual, Section 7 "LD.DW" (Rev.1.20, p.205):
+ *   adr  ← GR[reg1] + sign-extend(disp23)
+ *   data ← Load-memory(adr, Double-word)
+ *   GR[reg3+1] || GR[reg3] ← data
+ *
+ * reg3 must be even (LSB is architecturally ignored per SLEIGH R2731pairEx
+ * which uses opcode bits 12..15, discarding bit 11). We mask it here for
+ * safety against malformed encodings.
+ *
+ * Lower 32-bit word → GR[reg3]    (address adr)
+ * Upper 32-bit word → GR[reg3+1]  (address adr+4)
+ */
 bool LddwDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                           BN::LowLevelILFunction &il,
                           BinaryNinja::Architecture *arch) {
-  il.AddInstruction(il.Unimplemented());
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 =
+      static_cast<uint8_t>(LiftExtractXIVReg3(opcode) & static_cast<uint8_t>(~1u));
+  const int32_t disp = LiftExtractXIVDisp23(opcode, /*aligned=*/true);
+
+  // Low word → reg3
+  il.AddInstruction(il.SetRegister(
+      Sizes::LEN32BIT, reg3,
+      il.Load(Sizes::LEN32BIT,
+              il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                     il.Const(Sizes::LEN32BIT,
+                               static_cast<uint32_t>(disp))))));
+  // High word → reg3+1
+  il.AddInstruction(il.SetRegister(
+      Sizes::LEN32BIT, static_cast<uint8_t>(reg3 + 1),
+      il.Load(Sizes::LEN32BIT,
+              il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                     il.Const(Sizes::LEN32BIT,
+                               static_cast<uint32_t>(disp + 4))))));
   len = Sizes::LEN48BIT;
   return true;
 }
 
+/* ST.DW reg3, disp23[reg1]
+ *
+ * RH850G3KH Software Manual, Section 7 "ST.DW" (Rev.1.20, p.275):
+ *   adr  ← GR[reg1] + sign-extend(disp23)
+ *   data ← GR[reg3+1] || GR[reg3]
+ *   Store-memory(adr, data, Double-word)
+ *
+ * reg3 must be even (same R2731pairEx convention as LD.DW above).
+ *
+ * GR[reg3]   → lower 32 bits (stored at adr)
+ * GR[reg3+1] → upper 32 bits (stored at adr+4)
+ */
 bool StdwR3Disp23R1::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                           BN::LowLevelILFunction &il,
                           BinaryNinja::Architecture *arch) {
-  il.AddInstruction(il.Unimplemented());
+  const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
+  const auto reg3 =
+      static_cast<uint8_t>(LiftExtractXIVReg3(opcode) & static_cast<uint8_t>(~1u));
+  const int32_t disp = LiftExtractXIVDisp23(opcode, /*aligned=*/true);
+
+  // Low word: store reg3 at adr
+  il.AddInstruction(il.Store(
+      Sizes::LEN32BIT,
+      il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+             il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp))),
+      il.Register(Sizes::LEN32BIT, reg3)));
+  // High word: store reg3+1 at adr+4
+  il.AddInstruction(il.Store(
+      Sizes::LEN32BIT,
+      il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+             il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp + 4))),
+      il.Register(Sizes::LEN32BIT, static_cast<uint8_t>(reg3 + 1))));
   len = Sizes::LEN48BIT;
   return true;
 }
