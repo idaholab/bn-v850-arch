@@ -551,27 +551,28 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
 
         // PUSHSP / POPSP / JARL [reg1], reg3 share Format XI sub-opcode
         // 00101100000 (low 11 bits of word2). Differentiated by word1 reg2.
-        if (word2_low11 == 0b00101100000) {
-          if (reg2_field == 0b01000) {
+        if (word2_low11 == Opcodes::SUBOP_XI_PUSHSP_POPSP_JARL) {
+          if (reg2_field == Opcodes::REG2_FIELD_PUSHSP) {
             return std::make_unique<PushspRhRt>(t, Sizes::LEN32BIT);
           }
-          if (reg2_field == 0b01100) {
+          if (reg2_field == Opcodes::REG2_FIELD_POPSP) {
             return std::make_unique<PopspRhRt>(t, Sizes::LEN32BIT);
           }
-          if (reg2_field == 0b11000) {
+          if (reg2_field == Opcodes::REG2_FIELD_JARL_IND) {
             return std::make_unique<JarlR1R3>(t, Sizes::LEN32BIT);
           }
         }
 
         // CAXI [reg1], reg2, reg3 : word2 low 11 = 00011101110
-        if (word2_low11 == 0b00011101110) {
+        if (word2_low11 == Opcodes::SUBOP_XI_CAXI) {
           return std::make_unique<CaxiR1R2R3>(t, Sizes::LEN32BIT);
         }
 
         // SCH0R / SCH0L / SCH1R / SCH1L share word2 bits[10:3] = 01101100,
         // with bits[2:0] selecting the variant (see G3MH pp.251-254).
         // reg2 field (source) uses normal word1 reg2; reg1 field must be 0.
-        if ((word2_low11 & 0b11111111000) == 0b01101100000 && reg1_field == 0) {
+        if ((word2_low11 & Opcodes::MASK_XI_SCH) == Opcodes::SUBOP_XI_SCH &&
+            reg1_field == 0) {
           switch (word2_low11 & 0b111) {
             case 0b000:
               return std::make_unique<Sch0rR2R3>(t, Sizes::LEN32BIT);
@@ -588,7 +589,7 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
 
         // SNOOZE: word1 = 0000111111100000, word2 = 0000000100100000.
         // Word1 reg2 = 00001 distinguishes from HALT (reg2 = 00000).
-        if (reg2_field == 0b00001 && reg1_field == 0 &&
+        if (reg2_field == Opcodes::REG2_FIELD_SNOOZE && reg1_field == 0 &&
             (opcode >> 16 & 0xFFFF) == Opcodes::OP_X_HALT) {
           return std::make_unique<Snooze>(t, Sizes::LEN32BIT);
         }
@@ -800,7 +801,7 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
                 }
               } else {
                 // TLB* instructions: HW1 = 0x87E0, HW2 selects the op.
-                if (hw1 == 0x87E0u) {
+                if (hw1 == Opcodes::EXACT_OP_X_HW1_TLB_EI) {
                   switch (hw2) {
                     case Opcodes::EXACT_OP_X_HW2_TLBAI:
                       return std::make_unique<NoOperandSystemOp>(
@@ -836,10 +837,10 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
               //   EIRET = 0x0148 (bit 3 set)
               //   FERET = 0x014A (bit 3 and bit 1 set)
               uint16_t w2 = static_cast<uint16_t>(opcode >> 16);
-              if ((w2 & 0x0A) == 0x0A) {
+              if (w2 == Opcodes::OP_X_FERET) {
                 return std::make_unique<Feret>(t, Sizes::LEN32BIT);
               }
-              if (w2 & 0x08) {
+              if (w2 == Opcodes::OP_X_EIRET) {
                 return std::make_unique<Eiret>(t, Sizes::LEN32BIT);
               }
               return std::make_unique<Reti>(t, Sizes::LEN32BIT);

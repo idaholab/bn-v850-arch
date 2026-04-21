@@ -481,23 +481,30 @@ constexpr uint16_t EXACT_OP_I_DBHVTRAP = 0xE040;
 // V850E3/G3MH Format-X 32-bit exact HW2 encodings (Ghidra SLEIGH
 // v850e3.sinc). HW1 is 0x87E0 (reg2 bit set) for TLB* / EI, 0x07E0 for
 // DI / EST. All share op0510 = 0b111111.
-constexpr uint16_t EXACT_OP_X_HW2_EI_DI  = 0x0160;
-constexpr uint16_t EXACT_OP_X_HW2_TLBAI  = 0x8960;
-constexpr uint16_t EXACT_OP_X_HW2_TLBR   = 0xE960;
-constexpr uint16_t EXACT_OP_X_HW2_TLBS   = 0xC160;
-constexpr uint16_t EXACT_OP_X_HW2_TLBVI  = 0x8160;
-constexpr uint16_t EXACT_OP_X_HW2_TLBW   = 0xE160;
-constexpr uint16_t EXACT_OP_X_HW2_EST    = 0x0132;
+constexpr uint16_t EXACT_OP_X_HW1_TLB_EI =
+    0x87E0;  // HW1 for TLB*/EI (reg2 bit 15 set)
+constexpr uint16_t EXACT_OP_X_HW2_EI_DI = 0x0160;
+constexpr uint16_t EXACT_OP_X_HW2_TLBAI = 0x8960;
+constexpr uint16_t EXACT_OP_X_HW2_TLBR = 0xE960;
+constexpr uint16_t EXACT_OP_X_HW2_TLBS = 0xC160;
+constexpr uint16_t EXACT_OP_X_HW2_TLBVI = 0x8160;
+constexpr uint16_t EXACT_OP_X_HW2_TLBW = 0xE160;
+constexpr uint16_t EXACT_OP_X_HW2_EST = 0x0132;
 
 // SYSCALL / DBPUSH / DBTAG all share HW2 low-11 = 0x160 (same as EI/DI)
 // and op0510 = 0b111111, but are distinguished by HW1 reg2 (bits[15:11]):
 //   SYSCALL vector8 : reg2 = 0b11010  (op0515 = 0x6BF)
 //   DBPUSH  R,R    : reg2 = 0b01011  (op0515 = 0x2FF)
 //   DBTAG   imm10  : reg2 = 0b11001  (op0515 = 0x67F)
-constexpr uint8_t  REG2_FIELD_SYSCALL = 0b11010;
-constexpr uint8_t  REG2_FIELD_DBPUSH  = 0b01011;
-constexpr uint8_t  REG2_FIELD_DBTAG   = 0b11001;
-constexpr uint16_t MASK_X_HW2_LOW11   = 0x07FF;
+constexpr uint8_t REG2_FIELD_SYSCALL = 0b11010;
+constexpr uint8_t REG2_FIELD_DBPUSH = 0b01011;
+constexpr uint8_t REG2_FIELD_DBTAG = 0b11001;
+constexpr uint8_t REG2_FIELD_SNOOZE =
+    0b00001;  // distinguishes SNOOZE from HALT (0b00000)
+constexpr uint8_t REG2_FIELD_PUSHSP = 0b01000;    // Format XI PUSHSP rh-rt
+constexpr uint8_t REG2_FIELD_POPSP = 0b01100;     // Format XI POPSP rh-rt
+constexpr uint8_t REG2_FIELD_JARL_IND = 0b11000;  // Format XI JARL [reg1], reg3
+constexpr uint16_t MASK_X_HW2_LOW11 = 0x07FF;
 
 // Synchronize-family instructions: Format I, exact 16-bit encodings.
 // Per G3MH Software Manual Section 7.2, pp. 287-290 (SYNCE/SYNCI/SYNCM/SYNCP).
@@ -628,6 +635,10 @@ constexpr uint16_t OP_IX_SASF = 0b0000001000000000;
 constexpr uint16_t OP_X_TRAP = 0b0000000100000000;
 constexpr uint16_t OP_X_HALT = 0b0000000100100000;
 constexpr uint16_t OP_X_RETI = 0b0000000101000000;
+constexpr uint16_t OP_X_EIRET =
+    0b0000000101001000;  // 0x0148 — G3MH (bit 3 set)
+constexpr uint16_t OP_X_FERET =
+    0b0000000101001010;  // 0x014A — G3MH (bits 3+1 set)
 constexpr uint16_t OP_X_CTRET = 0b0000000101000100;
 constexpr uint16_t OP_X_DBRET = 0b0000000101000110;
 constexpr uint16_t OP_X_DI_OR_EI = 0b0000000101100000;
@@ -658,6 +669,14 @@ constexpr uint8_t SUBOP_XI_DIVU = 0b10;
 constexpr uint8_t SUBOP_XI_CMOV =
     0;  // Bit 16 of word 2; idk if needed currently
 
+// 11-bit word2[10:0] selectors for Format XI instructions
+constexpr uint16_t SUBOP_XI_PUSHSP_POPSP_JARL =
+    0b00101100000;  // shared by PUSHSP/POPSP/jarl [reg1]
+constexpr uint16_t SUBOP_XI_CAXI = 0b00011101110;  // CAXI [reg1], reg2, reg3
+constexpr uint16_t MASK_XI_SCH = 0b11111111000;  // upper-8 mask for SCH family
+constexpr uint16_t SUBOP_XI_SCH =
+    0b01101100000;  // SCH0L/SCH0R/SCH1L/SCH1R base
+
 /* Format XII */
 // Bits 22-26, word2
 constexpr uint8_t OP_XII_MUL_OR_MULU = 0b01001;
@@ -676,9 +695,9 @@ constexpr uint8_t SUBOP_XII_HSH = 0b110;
 
 /* Format IX: BINS (bitfield insert) -- sub-opcode constants */
 // Sub-opcode values live in bits 5..10 of word 2 (G3MH p.162).
-constexpr uint8_t SUBOP_IX_BINS_HI = 0b001001;  // msb >= 16, lsb >= 16
-constexpr uint8_t SUBOP_IX_BINS_MID = 0b001011; // msb >= 16, lsb <  16
-constexpr uint8_t SUBOP_IX_BINS_LO = 0b001101;  // msb <  16, lsb <  16
+constexpr uint8_t SUBOP_IX_BINS_HI = 0b001001;   // msb >= 16, lsb >= 16
+constexpr uint8_t SUBOP_IX_BINS_MID = 0b001011;  // msb >= 16, lsb <  16
+constexpr uint8_t SUBOP_IX_BINS_LO = 0b001101;   // msb <  16, lsb <  16
 
 /* Format XIII */
 // 5-bit opcode is bits 6-10 of word 1
@@ -755,8 +774,8 @@ constexpr uint8_t SUBOP_XIV_STDW = 0x0F;
  *         0x370 = ld.b / ld.bu   0x372 = st.b
  *         0x374 = ld.h / ld.hu   0x376 = st.h
  *         0x378 = ld.w           0x37A = st.w
- *   HW1 bits 0..4  = reg1 (base / pointer register — also the writeback target).
- *   HW2 bits 31..27 = reg3 (load destination / store source).
+ *   HW1 bits 0..4  = reg1 (base / pointer register — also the writeback
+ * target). HW2 bits 31..27 = reg3 (load destination / store source).
  *
  * After the memory access the base register reg1 is updated:
  *   post-inc: reg1 <- reg1 + access_size
@@ -768,18 +787,21 @@ constexpr uint8_t SUBOP_XIV_STDW = 0x0F;
 /* ------------------------- */
 
 // reg2-field direction selectors (HW1 bits 15..11).
-constexpr uint8_t REG2_PIPD_POSTINC_SIGNED   = 0b00010;  // 2: post-inc (b/h/w/st.*)
+constexpr uint8_t REG2_PIPD_POSTINC_SIGNED =
+    0b00010;  // 2: post-inc (b/h/w/st.*)
 constexpr uint8_t REG2_PIPD_POSTINC_UNSIGNED = 0b00011;  // 3: post-inc (bu/hu)
-constexpr uint8_t REG2_PIPD_PREDEC_SIGNED    = 0b00100;  // 4: pre-dec  (b/h/w/st.*)
-constexpr uint8_t REG2_PIPD_PREDEC_UNSIGNED  = 0b00101;  // 5: pre-dec  (bu/hu)
+constexpr uint8_t REG2_PIPD_PREDEC_SIGNED = 0b00100;  // 4: pre-dec (b/h/w/st.*)
+constexpr uint8_t REG2_PIPD_PREDEC_UNSIGNED = 0b00101;  // 5: pre-dec  (bu/hu)
 
 // HW2 low-11-bit (op1626) access-width / opcode selectors.
-constexpr uint16_t SUBOP_PIPD_LDB_LDBU = 0x370;  // ld.b or ld.bu (reg2 disambig)
-constexpr uint16_t SUBOP_PIPD_STB      = 0x372;
-constexpr uint16_t SUBOP_PIPD_LDH_LDHU = 0x374;  // ld.h or ld.hu (reg2 disambig)
-constexpr uint16_t SUBOP_PIPD_STH      = 0x376;
-constexpr uint16_t SUBOP_PIPD_LDW      = 0x378;
-constexpr uint16_t SUBOP_PIPD_STW      = 0x37A;
+constexpr uint16_t SUBOP_PIPD_LDB_LDBU =
+    0x370;  // ld.b or ld.bu (reg2 disambig)
+constexpr uint16_t SUBOP_PIPD_STB = 0x372;
+constexpr uint16_t SUBOP_PIPD_LDH_LDHU =
+    0x374;  // ld.h or ld.hu (reg2 disambig)
+constexpr uint16_t SUBOP_PIPD_STH = 0x376;
+constexpr uint16_t SUBOP_PIPD_LDW = 0x378;
+constexpr uint16_t SUBOP_PIPD_STW = 0x37A;
 
 /* ------------------------------------------------------------------
  * V850E3 / RH850 G3MH extensions: ADF / SBF / ROTL / LOOP / CACHE / PREF
@@ -823,7 +845,7 @@ constexpr uint8_t SHIFT_CACHE_PREF_OP2731 = 11;
 constexpr uint8_t REG2_CACHE_HI3 = 0b111;  // hw1 reg2 bits[4:2] (op1315)
 constexpr uint8_t MASK_REG2_HI3 = 0b11100;
 constexpr uint8_t MASK_REG2_LO2 = 0b00011;
-constexpr uint8_t REG2_PREF = 0b11011;     // hw1 reg2 (exact)
+constexpr uint8_t REG2_PREF = 0b11011;  // hw1 reg2 (exact)
 
 }  // namespace V850::Opcodes
 

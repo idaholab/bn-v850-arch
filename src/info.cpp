@@ -111,8 +111,8 @@ bool Format_Ext_Info(const uint64_t opcode, BN::InstructionInfo &result) {
     case Opcodes::OP_X_RETI:
     case Opcodes::OP_X_CTRET:
     case Opcodes::OP_X_DBRET:
-    case 0x0148:  // EIRET (RH850 G3MH)
-    case 0x014A:  // FERET (RH850 G3MH)
+    case Opcodes::OP_X_EIRET:
+    case Opcodes::OP_X_FERET:
       result.AddBranch(FunctionReturn);
       result.length = Sizes::LEN32BIT;
       return true;
@@ -298,9 +298,8 @@ bool LoopR1Disp16::Info(const uint64_t opcode, const uint64_t addr,
     return false;
   }
   const uint16_t hw2 = static_cast<uint16_t>(opcode >> 16);
-  const uint16_t disp_field =
-      static_cast<uint16_t>((hw2 & Opcodes::MASK_LOOP_DISP) >>
-                            Opcodes::SHIFT_LOOP_DISP);
+  const uint16_t disp_field = static_cast<uint16_t>(
+      (hw2 & Opcodes::MASK_LOOP_DISP) >> Opcodes::SHIFT_LOOP_DISP);
   const uint32_t target =
       static_cast<uint32_t>(addr) - (static_cast<uint32_t>(disp_field) << 1);
   result.AddBranch(TrueBranch, target);
