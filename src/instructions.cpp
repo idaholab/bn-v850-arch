@@ -281,19 +281,15 @@ SatsubR1R2R3::SatsubR1R2R3(const IsaType &t, const uint8_t len)
     : Instruction(t, len) {}
 SatsubrR1R2R3::SatsubrR1R2R3(const IsaType &t, const uint8_t len)
     : Instruction(t, len) {}
-JarlR1R3::JarlR1R3(const IsaType &t, const uint8_t len)
-    : Instruction(t, len) {}
+JarlR1R3::JarlR1R3(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
 Snooze::Snooze(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
 NoOperandSystemOp::NoOperandSystemOp(const IsaType &t, const uint8_t len,
                                      const char *mnemonic_,
                                      uint32_t intrinsic_id_)
     : Instruction(t, len), mnemonic(mnemonic_), intrinsic_id(intrinsic_id_) {}
-Syscall::Syscall(const IsaType &t, const uint8_t len)
-    : Instruction(t, len) {}
-Dbpush::Dbpush(const IsaType &t, const uint8_t len)
-    : Instruction(t, len) {}
-Dbtag::Dbtag(const IsaType &t, const uint8_t len)
-    : Instruction(t, len) {}
+Syscall::Syscall(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
+Dbpush::Dbpush(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
+Dbtag::Dbtag(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
 RieI::RieI(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
 RieX::RieX(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
 Sch0lR2R3::Sch0lR2R3(const IsaType &t, const uint8_t len)
@@ -316,8 +312,7 @@ LoopR1Disp16::LoopR1Disp16(const IsaType &t, const uint8_t len)
     : Instruction(t, len) {}
 CacheOpR1::CacheOpR1(const IsaType &t, const uint8_t len)
     : Instruction(t, len) {}
-PrefOpR1::PrefOpR1(const IsaType &t, const uint8_t len)
-    : Instruction(t, len) {}
+PrefOpR1::PrefOpR1(const IsaType &t, const uint8_t len) : Instruction(t, len) {}
 
 /*
  * Instruction decoder method that will parse opcodes and return a
@@ -396,9 +391,9 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
        * op1620 for halfword / word / dw variants). See opcodes.h and
        * Ghidra SLEIGH v850_load_store.sinc / v850e3.sinc. */
       {
-        const auto op0515 = static_cast<uint16_t>(
-            (opcode & OpcodeFields::MASK_XIV_OP0515) >>
-            OpcodeFields::SHIFT_XIV_OP0515);
+        const auto op0515 =
+            static_cast<uint16_t>((opcode & OpcodeFields::MASK_XIV_OP0515) >>
+                                  OpcodeFields::SHIFT_XIV_OP0515);
         const auto hw2 = static_cast<uint16_t>(opcode >> 16);
         const auto sub1619 =
             static_cast<uint8_t>(hw2 & OpcodeFields::MASK_XIV_OP1619);
@@ -576,8 +571,7 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
         // SCH0R / SCH0L / SCH1R / SCH1L share word2 bits[10:3] = 01101100,
         // with bits[2:0] selecting the variant (see G3MH pp.251-254).
         // reg2 field (source) uses normal word1 reg2; reg1 field must be 0.
-        if ((word2_low11 & 0b11111111000) == 0b01101100000 &&
-            reg1_field == 0) {
+        if ((word2_low11 & 0b11111111000) == 0b01101100000 && reg1_field == 0) {
           switch (word2_low11 & 0b111) {
             case 0b000:
               return std::make_unique<Sch0rR2R3>(t, Sizes::LEN32BIT);
@@ -600,8 +594,12 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
         }
 
         // RIE (Format X): word1 = iiiii 1111111 IIII, word2 = 0x0000.
-        // Distinguished from SETF by bit 4 of word1 (LSB of reg1 field).
-        // SETF has that bit = 0, RIE has it = 1.
+        // Bit[4] of word1 is always 1 in RIE — it is the last bit of the
+        // 7-bit fixed prefix 1111111 at bits[10:4]. SETF uses a 6-bit prefix
+        // at bits[10:5], so SETF to r0–r15 has bit[4]=0 (register < 16).
+        // SETF to r16–r31 also has bit[4]=1, colliding with even-imm5 RIE
+        // variants; we prefer RIE since SETF to callee-saved regs via
+        // condition codes is uncommon in practice.
         if ((opcode >> 16 & 0xFFFF) == 0 && (reg1_field & 0b10000)) {
           return std::make_unique<RieX>(t, Sizes::LEN32BIT);
         }
@@ -670,7 +668,8 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
 
       /* Single-precision FPU (Format F:I): category bit 2 of HW2 == 1
          (OPCODE_BIT_1 in the HW2-shifted projection). Dispatch before the
-         existing MUL/DIV/CMOV tree, which only handles category=0b000..0b011. */
+         existing MUL/DIV/CMOV tree, which only handles category=0b000..0b011.
+       */
       if (opcode >> 16 & OpcodeFields::OPCODE_BIT_1) {
         if (auto f = ParseFpuSingle(t, opcode)) {
           return f;
@@ -680,7 +679,8 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
       if (opcode >> 16 & OpcodeFields::OPCODE_BIT_2) {
         if (opcode >> 16 & OpcodeFields::OPCODE_BIT_3) {
           if (opcode >> 16 & OpcodeFields::OPCODE_BIT_5) {
-            // bit23 (OPCODE_BIT_4) distinguishes BSW/BSH/HSW (0) from MAC/MACU (1)
+            // bit23 (OPCODE_BIT_4) distinguishes BSW/BSH/HSW (0) from MAC/MACU
+            // (1)
             if (opcode >> 16 & OpcodeFields::OPCODE_BIT_4) {
               // 011110 = MAC, 011111 = MACU (bit21 / OPCODE_BIT_6)
               // G3MH Software Manual p. 215-216
@@ -708,7 +708,10 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
           // distinguished by hw2[10:0]:
           //   01110111010 — SATADD reg1, reg2, reg3 (G3MH p.244)
           //   01110011010 — SATSUB reg1, reg2, reg3 (G3MH p.246)
-          //   01111001010 — SATSUBR reg1, reg2, reg3 (G3MH p.249)
+          //   01111001010 — SATSUBR reg1, reg2, reg3 (Ghidra SLEIGH
+          //   v850e3.sinc;
+          //                 G3MH p.249 only documents the 2-operand Format I
+          //                 form)
           // These collide with CMOV under the old single-bit discriminator;
           // peek at the Format XI low 11-bit sub-opcode first.
           {
@@ -801,24 +804,19 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b1(
                   switch (hw2) {
                     case Opcodes::EXACT_OP_X_HW2_TLBAI:
                       return std::make_unique<NoOperandSystemOp>(
-                          t, Sizes::LEN32BIT, "tlbai",
-                          SystemIntrinsic::Tlbai);
+                          t, Sizes::LEN32BIT, "tlbai", SystemIntrinsic::Tlbai);
                     case Opcodes::EXACT_OP_X_HW2_TLBR:
                       return std::make_unique<NoOperandSystemOp>(
-                          t, Sizes::LEN32BIT, "tlbr",
-                          SystemIntrinsic::Tlbr);
+                          t, Sizes::LEN32BIT, "tlbr", SystemIntrinsic::Tlbr);
                     case Opcodes::EXACT_OP_X_HW2_TLBS:
                       return std::make_unique<NoOperandSystemOp>(
-                          t, Sizes::LEN32BIT, "tlbs",
-                          SystemIntrinsic::Tlbs);
+                          t, Sizes::LEN32BIT, "tlbs", SystemIntrinsic::Tlbs);
                     case Opcodes::EXACT_OP_X_HW2_TLBVI:
                       return std::make_unique<NoOperandSystemOp>(
-                          t, Sizes::LEN32BIT, "tlbvi",
-                          SystemIntrinsic::Tlbvi);
+                          t, Sizes::LEN32BIT, "tlbvi", SystemIntrinsic::Tlbvi);
                     case Opcodes::EXACT_OP_X_HW2_TLBW:
                       return std::make_unique<NoOperandSystemOp>(
-                          t, Sizes::LEN32BIT, "tlbw",
-                          SystemIntrinsic::Tlbw);
+                          t, Sizes::LEN32BIT, "tlbw", SystemIntrinsic::Tlbw);
                     default:
                       break;
                   }
@@ -1164,12 +1162,12 @@ std::optional<std::unique_ptr<Instruction>> ParsePrefix0b00001(
   // V850E3 debug Format-I exact 16-bit encodings share op0510 = 0b000010
   // with DIVH / SWITCH / DBTRAP and are identified by their full opcode.
   if (opcode == Opcodes::EXACT_OP_I_DBCP) {
-    return std::make_unique<NoOperandSystemOp>(
-        t, Sizes::LEN16BIT, "dbcp", SystemIntrinsic::Dbcp);
+    return std::make_unique<NoOperandSystemOp>(t, Sizes::LEN16BIT, "dbcp",
+                                               SystemIntrinsic::Dbcp);
   }
   if (opcode == Opcodes::EXACT_OP_I_DBHVTRAP) {
-    return std::make_unique<NoOperandSystemOp>(
-        t, Sizes::LEN16BIT, "dbhvtrap", SystemIntrinsic::Dbhvtrap);
+    return std::make_unique<NoOperandSystemOp>(t, Sizes::LEN16BIT, "dbhvtrap",
+                                               SystemIntrinsic::Dbhvtrap);
   }
   return std::make_unique<DivhR1R2>(t, Sizes::LEN16BIT);
 }

@@ -256,11 +256,11 @@ bool Lift_I_SWITCH_DBTRAP_DIVH(const uint64_t opcode, uint64_t addr,
     //   remainder is discarded
     il.AddInstruction(il.SetRegister(
         Sizes::LEN32BIT, reg2,
-        il.DivSigned(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
-                     il.SignExtend(Sizes::LEN32BIT,
-                                   il.LowPart(Sizes::LEN16BIT,
-                                              il.Register(Sizes::LEN32BIT,
-                                                          reg1)))),
+        il.DivSigned(
+            Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
+            il.SignExtend(Sizes::LEN32BIT,
+                          il.LowPart(Sizes::LEN16BIT,
+                                     il.Register(Sizes::LEN32BIT, reg1)))),
         Flags::FLAGS_WRITE_OV_S_Z));
     len = Sizes::LEN16BIT;
     return true;
@@ -296,7 +296,8 @@ bool Lift_I_SATSUBR_ZXB(const uint64_t opcode, uint64_t addr, size_t &len,
     BN::ExprId result = il.Sub(
         Sizes::LEN64BIT,  // Calculate result of subtract operation
         il.Register(Sizes::LEN32BIT, reg1), il.Register(Sizes::LEN32BIT, reg2),
-        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches below
+        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat
+                                        // branches below
     il.AddInstruction(  // Check whether maximum negative value is exceeded
         il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
                                        il.Const(Sizes::LEN32BIT, 0x80000000)),
@@ -309,8 +310,8 @@ bool Lift_I_SATSUBR_ZXB(const uint64_t opcode, uint64_t addr, size_t &len,
                        il.Const(Sizes::LEN32BIT, 0x80000000)));
     // SAT flag is sticky per G3MH spec — set on saturation, cleared only
     // by LDSR of PSW. Enables correct BSa lowering via il.Flag("sat").
-    il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                 il.Const(Sizes::LEN8BIT, 1)));
+    il.AddInstruction(
+        il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(sat_neg_false);
@@ -325,14 +326,13 @@ bool Lift_I_SATSUBR_ZXB(const uint64_t opcode, uint64_t addr, size_t &len,
                         // 0x7FFFFFFF
         il.SetRegister(Sizes::LEN32BIT, reg1,
                        il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
-    il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                 il.Const(Sizes::LEN8BIT, 1)));
+    il.AddInstruction(
+        il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(sat_pos_false);  // Result NOT saturated
     il.AddInstruction(  // Store result just like normal subtract operation
-        il.SetRegister(Sizes::LEN32BIT, reg1,
-                       result));
+        il.SetRegister(Sizes::LEN32BIT, reg1, result));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(done);
@@ -372,7 +372,8 @@ bool Lift_I_SATSUB_SXB(const uint64_t opcode, uint64_t addr, size_t &len,
     BN::ExprId result = il.Sub(
         Sizes::LEN64BIT,  // Calculate result of subtract operation
         il.Register(Sizes::LEN32BIT, reg2), il.Register(Sizes::LEN32BIT, reg1),
-        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches below
+        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat
+                                        // branches below
     il.AddInstruction(  // Check whether maximum negative value is exceeded
         il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
                                        il.Const(Sizes::LEN32BIT, 0x80000000)),
@@ -383,8 +384,8 @@ bool Lift_I_SATSUB_SXB(const uint64_t opcode, uint64_t addr, size_t &len,
                         // 0x80000000
         il.SetRegister(Sizes::LEN32BIT, reg2,
                        il.Const(Sizes::LEN32BIT, 0x80000000)));
-    il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                 il.Const(Sizes::LEN8BIT, 1)));
+    il.AddInstruction(
+        il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(sat_neg_false);
@@ -399,14 +400,13 @@ bool Lift_I_SATSUB_SXB(const uint64_t opcode, uint64_t addr, size_t &len,
                         // 0x7FFFFFFF
         il.SetRegister(Sizes::LEN32BIT, reg2,
                        il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
-    il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                 il.Const(Sizes::LEN8BIT, 1)));
+    il.AddInstruction(
+        il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(sat_pos_false);  // Result NOT saturated
     il.AddInstruction(  // Store result just like normal subtract operation
-        il.SetRegister(Sizes::LEN32BIT, reg2,
-                       result));
+        il.SetRegister(Sizes::LEN32BIT, reg2, result));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(done);
@@ -446,7 +446,8 @@ bool Lift_I_SATADD_ZXH(const uint64_t opcode, uint64_t addr, size_t &len,
     BN::ExprId result = il.Add(
         Sizes::LEN64BIT,  // Calculate result of subtract operation
         il.Register(Sizes::LEN32BIT, reg2), il.Register(Sizes::LEN32BIT, reg1),
-        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches below
+        Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat
+                                        // branches below
 
     il.AddInstruction(  // Check whether maximum negative value is exceeded
         il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
@@ -454,11 +455,10 @@ bool Lift_I_SATADD_ZXH(const uint64_t opcode, uint64_t addr, size_t &len,
               sat_neg_true, sat_neg_false));
 
     il.MarkLabel(sat_neg_true);  // Saturated negative result
+    il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg2,
+                                     il.Const(Sizes::LEN32BIT, 0x80000000)));
     il.AddInstruction(
-        il.SetRegister(Sizes::LEN32BIT, reg2,
-                       il.Const(Sizes::LEN32BIT, 0x80000000)));
-    il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                 il.Const(Sizes::LEN8BIT, 1)));
+        il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(sat_neg_false);
@@ -469,17 +469,15 @@ bool Lift_I_SATADD_ZXH(const uint64_t opcode, uint64_t addr, size_t &len,
             sat_pos_true, sat_pos_false));
 
     il.MarkLabel(sat_pos_true);  // Saturated positive result
+    il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg2,
+                                     il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
     il.AddInstruction(
-        il.SetRegister(Sizes::LEN32BIT, reg2,
-                       il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
-    il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                 il.Const(Sizes::LEN8BIT, 1)));
+        il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(sat_pos_false);  // Result NOT saturated
     il.AddInstruction(  // Store result just like normal subtract operation
-        il.SetRegister(Sizes::LEN32BIT, reg2,
-                       result));
+        il.SetRegister(Sizes::LEN32BIT, reg2, result));
     il.AddInstruction(il.Goto(done));
 
     il.MarkLabel(done);
@@ -659,10 +657,12 @@ bool Lift_II(const uint64_t opcode, uint64_t addr, size_t &len,
 
       } else {  // Opcode 0b010110; format II shl
         // Logical shift reg2 left by imm5 (G3MH manual: shl imm5, reg2)
-        // Flags: CY = last bit shifted out, S = sign of result, Z = zero, OV = 0
+        // Flags: CY = last bit shifted out, S = sign of result, Z = zero, OV =
+        // 0
         len = Sizes::LEN16BIT;
         if (reg2 == Registers::R0) {
-          // r0 is hardwired zero; writes discarded. Skip to avoid malformed LLIL.
+          // r0 is hardwired zero; writes discarded. Skip to avoid malformed
+          // LLIL.
           return true;
         }
         il.AddInstruction(il.SetRegister(
@@ -676,7 +676,8 @@ bool Lift_II(const uint64_t opcode, uint64_t addr, size_t &len,
       if (opcode &
           OpcodeFields::OPCODE_BIT_6) {  // Opcode 0b010101; format II sar
         // Arithmetic shift reg2 right by imm5 (G3MH manual: sar imm5, reg2)
-        // Flags: CY = last bit shifted out, S = sign of result, Z = zero, OV = 0
+        // Flags: CY = last bit shifted out, S = sign of result, Z = zero, OV =
+        // 0
         len = Sizes::LEN16BIT;
         if (reg2 == Registers::R0) {
           return true;
@@ -691,7 +692,8 @@ bool Lift_II(const uint64_t opcode, uint64_t addr, size_t &len,
 
       } else {  // Opcode 0b010100; format II shr
         // Logical shift reg2 right by imm5 (G3MH manual: shr imm5, reg2)
-        // Flags: CY = last bit shifted out, S = sign of result, Z = zero, OV = 0
+        // Flags: CY = last bit shifted out, S = sign of result, Z = zero, OV =
+        // 0
         len = Sizes::LEN16BIT;
         if (reg2 == Registers::R0) {
           return true;
@@ -766,13 +768,12 @@ bool Lift_II(const uint64_t opcode, uint64_t addr, size_t &len,
         // CTBP is modeled as a system register living at ConstPointer(ctbp).
         BN::ExprId ctbp_val =
             il.Load(Sizes::LEN32BIT, il.ConstPointer(Sizes::LEN32BIT, ctbp));
-        BN::ExprId entry_addr =
+        BN::ExprId entry_addr = il.Add(Sizes::LEN32BIT, ctbp_val,
+                                       il.Const(Sizes::LEN32BIT, imm6 << 1));
+        BN::ExprId target_pc =
             il.Add(Sizes::LEN32BIT, ctbp_val,
-                   il.Const(Sizes::LEN32BIT, imm6 << 1));
-        BN::ExprId target_pc = il.Add(
-            Sizes::LEN32BIT, ctbp_val,
-            il.ZeroExtend(Sizes::LEN32BIT,
-                          il.Load(Sizes::LEN16BIT, entry_addr)));
+                   il.ZeroExtend(Sizes::LEN32BIT,
+                                 il.Load(Sizes::LEN16BIT, entry_addr)));
         il.AddInstruction(il.Call(target_pc));
 
         len = Sizes::LEN16BIT;
@@ -795,8 +796,8 @@ bool Lift_II(const uint64_t opcode, uint64_t addr, size_t &len,
               Sizes::LEN64BIT,  // Calculate result of subtract operation
               il.Register(Sizes::LEN32BIT, reg2),
               il.SignExtend(Sizes::LEN32BIT, il.Const(Sizes::LEN8BIT, imm5)),
-              Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches
-                                                  // behavior
+              Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly
+                                              // on sat branches behavior
 
           il.AddInstruction(  // Check whether maximum negative value is
                               // exceeded
@@ -967,8 +968,7 @@ bool Lift_III(const uint64_t opcode, uint64_t addr, size_t &len,
   const bool indirect_false = (f == nullptr);
 
   // il.If() takes references; pass the pointed-to label or the local one.
-  il.AddInstruction(il.If(conditionIL,
-                          t ? *t : local_true_label,
+  il.AddInstruction(il.If(conditionIL, t ? *t : local_true_label,
                           f ? *f : local_false_label));
 
   if (indirect_true) {
@@ -994,12 +994,11 @@ bool Lift_IV_SLDB(const uint64_t opcode, uint64_t addr, size_t &len,
 
   il.AddInstruction(il.SetRegister(
       Sizes::LEN32BIT, reg2,
-      il.SignExtend(
-          Sizes::LEN32BIT,
-          il.Load(Sizes::LEN8BIT,
-                  il.Add(Sizes::LEN32BIT,
-                         il.Register(Sizes::LEN32BIT, Registers::EP),
-                         il.Const(Sizes::LEN32BIT, disp7))))));
+      il.SignExtend(Sizes::LEN32BIT,
+                    il.Load(Sizes::LEN8BIT,
+                            il.Add(Sizes::LEN32BIT,
+                                   il.Register(Sizes::LEN32BIT, Registers::EP),
+                                   il.Const(Sizes::LEN32BIT, disp7))))));
   len = Sizes::LEN16BIT;
   return true;
 }
@@ -1064,9 +1063,8 @@ bool Lift_IV(const uint64_t opcode, uint64_t addr, size_t &len,
       // SHIFT_IV_DISP).  il.Store truncates the 32-bit source to 2 bytes.
       disp = Extract7BitDisp8OpcodeField(opcode);
 
-      reg2_il = (reg2 == Registers::R0)
-                    ? il.Const(Sizes::LEN32BIT, 0)
-                    : il.Register(Sizes::LEN32BIT, reg2);
+      reg2_il = (reg2 == Registers::R0) ? il.Const(Sizes::LEN32BIT, 0)
+                                        : il.Register(Sizes::LEN32BIT, reg2);
       il.AddInstruction(il.Store(
           Sizes::LEN16BIT,
           il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, Registers::EP),
@@ -1102,9 +1100,8 @@ bool Lift_IV(const uint64_t opcode, uint64_t addr, size_t &len,
         // bits [6:1] and SHIFT_IV_DISP (<<1) puts them at [7:2] with LSB=0).
         disp = Extract6BitDisp8OpcodeField(opcode);
 
-        reg2_il = (reg2 == Registers::R0)
-                      ? il.Const(Sizes::LEN32BIT, 0)
-                      : il.Register(Sizes::LEN32BIT, reg2);
+        reg2_il = (reg2 == Registers::R0) ? il.Const(Sizes::LEN32BIT, 0)
+                                          : il.Register(Sizes::LEN32BIT, reg2);
         il.AddInstruction(il.Store(
             Sizes::LEN32BIT,
             il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, Registers::EP),
@@ -1153,8 +1150,7 @@ bool Lift_V_JARL_JR_VII_LDBU_XIII_PREPARE(const uint64_t opcode,
     } else {
       // Jump and register link
       // Text format: jarl disp22, reg2
-      const uint32_t return_pc =
-          static_cast<uint32_t>(addr) + Sizes::LEN32BIT;
+      const uint32_t return_pc = static_cast<uint32_t>(addr) + Sizes::LEN32BIT;
       il.AddInstruction(  // Save return PC in reg2
           il.SetRegister(Sizes::LEN32BIT, reg2,
                          il.Const(Sizes::LEN32BIT, return_pc)));
@@ -1238,8 +1234,7 @@ bool Lift_V_JARL_JR_VII_LDBU_XIII_PREPARE(const uint64_t opcode,
 
         case Opcodes::PREPARE_LOAD_SIGN_EXTENDED_IMM16: {
           // Bits 47..32 hold imm16; sign-extend to 32 bits
-          const uint16_t imm16 =
-              static_cast<uint16_t>((opcode >> 32) & 0xFFFF);
+          const uint16_t imm16 = static_cast<uint16_t>((opcode >> 32) & 0xFFFF);
           imm = static_cast<int32_t>(static_cast<int16_t>(imm16));
           len = Sizes::LEN48BIT;
           break;
@@ -1247,8 +1242,7 @@ bool Lift_V_JARL_JR_VII_LDBU_XIII_PREPARE(const uint64_t opcode,
 
         case Opcodes::PREPARE_LOAD_LSL_IMM16: {
           // Bits 47..32 hold imm16; logically shift left by 16
-          const uint16_t imm16 =
-              static_cast<uint16_t>((opcode >> 32) & 0xFFFF);
+          const uint16_t imm16 = static_cast<uint16_t>((opcode >> 32) & 0xFFFF);
           imm = static_cast<int32_t>(static_cast<uint32_t>(imm16) << 16);
           len = Sizes::LEN48BIT;
           break;
@@ -1273,14 +1267,15 @@ bool Lift_V_JARL_JR_VII_LDBU_XIII_PREPARE(const uint64_t opcode,
     } else {  // ld.bu
       // Load byte unsigned
       // Text format: ld.bu disp16[reg1], reg2
-      // Per G3MH: disp16 is sign-extended to 32 bits before being added to reg1.
+      // Per G3MH: disp16 is sign-extended to 32 bits before being added to
+      // reg1.
       auto reg2 = static_cast<uint8_t>((opcode & OpcodeFields::MASK_REG2) >>
                                        OpcodeFields::SHIFT_REG2);
       auto reg1 = static_cast<uint8_t>(opcode & OpcodeFields::MASK_REG1);
-      int16_t disp16 = static_cast<int16_t>(
-          (opcode >> 16 & OpcodeFields::MASK_VII_DISP) |
-          ((opcode & OpcodeFields::MASK_VII_DISP0) >>
-           OpcodeFields::SHIFT_VII_DISP0));
+      int16_t disp16 =
+          static_cast<int16_t>((opcode >> 16 & OpcodeFields::MASK_VII_DISP) |
+                               ((opcode & OpcodeFields::MASK_VII_DISP0) >>
+                                OpcodeFields::SHIFT_VII_DISP0));
 
       il.AddInstruction(il.SetRegister(
           Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
@@ -1373,8 +1368,8 @@ bool Lift_VI_MOVHI_SATSUBI_XIII_DISPOSE(const uint64_t opcode, uint64_t addr,
       BN::ExprId result = il.Sub(
           Sizes::LEN32BIT, reg1_il,
           il.SignExtend(Sizes::LEN32BIT, il.Const(Sizes::LEN32BIT, imm16)),
-          Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on sat branches
-                                              // behavior
+          Flags::FLAGS_WRITE_CY_OV_S_Z);  // SAT is sticky; set explicitly on
+                                          // sat branches behavior
 
       il.AddInstruction(  // Check whether maximum negative value is exceeded
           il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
@@ -1382,11 +1377,10 @@ bool Lift_VI_MOVHI_SATSUBI_XIII_DISPOSE(const uint64_t opcode, uint64_t addr,
                 sat_neg_true, sat_neg_false));
 
       il.MarkLabel(sat_neg_true);  // Saturated negative result
+      il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg2,
+                                       il.Const(Sizes::LEN32BIT, 0x80000000)));
       il.AddInstruction(
-          il.SetRegister(Sizes::LEN32BIT, reg2,
-                         il.Const(Sizes::LEN32BIT, 0x80000000)));
-      il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                   il.Const(Sizes::LEN8BIT, 1)));
+          il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
       il.AddInstruction(il.Goto(done));
 
       il.MarkLabel(sat_neg_false);
@@ -1397,17 +1391,15 @@ bool Lift_VI_MOVHI_SATSUBI_XIII_DISPOSE(const uint64_t opcode, uint64_t addr,
                 sat_pos_true, sat_pos_false));
 
       il.MarkLabel(sat_pos_true);  // Saturated positive result
+      il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg2,
+                                       il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
       il.AddInstruction(
-          il.SetRegister(Sizes::LEN32BIT, reg2,
-                         il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
-      il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                                   il.Const(Sizes::LEN8BIT, 1)));
+          il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
       il.AddInstruction(il.Goto(done));
 
       il.MarkLabel(sat_pos_false);  // Result NOT saturated
       il.AddInstruction(  // Store result just like normal subtract operation
-          il.SetRegister(Sizes::LEN32BIT, reg2,
-                         result));
+          il.SetRegister(Sizes::LEN32BIT, reg2, result));
       il.AddInstruction(il.Goto(done));
 
       il.MarkLabel(done);
@@ -1509,11 +1501,11 @@ bool Lift_VI(const uint64_t opcode, uint64_t addr, size_t &len,
       // Per G3MH p.224: GR[reg2] <- GR[reg1](15:0) * imm16, both signed.
       il.AddInstruction(il.SetRegister(
           Sizes::LEN32BIT, reg2,
-          il.Mult(Sizes::LEN32BIT,
-                  il.SignExtend(Sizes::LEN32BIT,
-                                il.LowPart(Sizes::LEN16BIT, reg1_il)),
-                  il.SignExtend(Sizes::LEN32BIT,
-                                il.Const(Sizes::LEN16BIT, imm)))));
+          il.Mult(
+              Sizes::LEN32BIT,
+              il.SignExtend(Sizes::LEN32BIT,
+                            il.LowPart(Sizes::LEN16BIT, reg1_il)),
+              il.SignExtend(Sizes::LEN32BIT, il.Const(Sizes::LEN16BIT, imm)))));
       len = Sizes::LEN32BIT;
       return true;
 
@@ -1657,9 +1649,8 @@ bool Lift_VIII(const uint64_t opcode, uint64_t addr, size_t &len,
   switch (subop) {
     case Opcodes::SUBOP_SET1:
       // Z flag: Z = !bit_before
-      il.AddInstruction(il.And(Sizes::LEN8BIT,
-                               il.Load(Sizes::LEN8BIT, addrIL), bitmask,
-                               Flags::FLAGS_WRITE_Z));
+      il.AddInstruction(il.And(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL),
+                               bitmask, Flags::FLAGS_WRITE_Z));
       il.AddInstruction(il.Store(
           Sizes::LEN8BIT, addrIL,
           il.Or(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL), bitmask)));
@@ -1667,21 +1658,19 @@ bool Lift_VIII(const uint64_t opcode, uint64_t addr, size_t &len,
       return true;
 
     case Opcodes::SUBOP_CLR1:
-      il.AddInstruction(il.And(Sizes::LEN8BIT,
-                               il.Load(Sizes::LEN8BIT, addrIL), bitmask,
-                               Flags::FLAGS_WRITE_Z));
-      il.AddInstruction(il.Store(
-          Sizes::LEN8BIT, addrIL,
-          il.And(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL),
-                 il.Not(Sizes::LEN8BIT, bitmask))));
+      il.AddInstruction(il.And(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL),
+                               bitmask, Flags::FLAGS_WRITE_Z));
+      il.AddInstruction(
+          il.Store(Sizes::LEN8BIT, addrIL,
+                   il.And(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL),
+                          il.Not(Sizes::LEN8BIT, bitmask))));
       len = Sizes::LEN32BIT;
       return true;
 
     case Opcodes::SUBOP_NOT1:
       // Bitwise not operation: not1 bit#3, disp16[reg1]
-      il.AddInstruction(il.And(Sizes::LEN8BIT,
-                               il.Load(Sizes::LEN8BIT, addrIL), bitmask,
-                               Flags::FLAGS_WRITE_Z));
+      il.AddInstruction(il.And(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL),
+                               bitmask, Flags::FLAGS_WRITE_Z));
       il.AddInstruction(il.Store(
           Sizes::LEN8BIT, addrIL,
           il.Xor(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL), bitmask)));
@@ -1693,9 +1682,8 @@ bool Lift_VIII(const uint64_t opcode, uint64_t addr, size_t &len,
       // Per G3MH p.263: Z <- Not(extract-bit(M[reg1+se(disp16)], bit#3)).
       // And of the loaded byte with a single-bit mask: Z=1 iff bit was 0.
       // Result discarded (tst1 doesn't write memory or a register).
-      il.AddInstruction(il.And(Sizes::LEN8BIT,
-                               il.Load(Sizes::LEN8BIT, addrIL), bitmask,
-                               Flags::FLAGS_WRITE_Z));
+      il.AddInstruction(il.And(Sizes::LEN8BIT, il.Load(Sizes::LEN8BIT, addrIL),
+                               bitmask, Flags::FLAGS_WRITE_Z));
       len = Sizes::LEN32BIT;
       return true;
 
@@ -1732,18 +1720,17 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
   const auto reg3 = ExtractReg3OpcodeField(opcode);
 
   // Format IX: BINS (bitfield insert). G3MH p.162.
-  //   GR[reg2] <- GR[reg2](31:pos+width) || GR[reg1](width-1:0) || GR[reg2](pos-1:0)
+  //   GR[reg2] <- GR[reg2](31:pos+width) || GR[reg1](width-1:0) ||
+  //   GR[reg2](pos-1:0)
   // Sub-opcode bits (5..10) are 001001 / 001011 / 001101; collides with
   // HALT/EI/DI which have all reg/field bits zero. Discriminator matches
   // decoder and text handlers.
   {
-    const auto bins_subop =
-        (opcode >> 16 & OpcodeFields::MASK_IX_SUBOP_BINS) >>
-        OpcodeFields::SHIFT_IX_SUBOP_BINS;
-    const bool bins_subop_match =
-        (bins_subop == Opcodes::SUBOP_IX_BINS_HI ||
-         bins_subop == Opcodes::SUBOP_IX_BINS_MID ||
-         bins_subop == Opcodes::SUBOP_IX_BINS_LO);
+    const auto bins_subop = (opcode >> 16 & OpcodeFields::MASK_IX_SUBOP_BINS) >>
+                            OpcodeFields::SHIFT_IX_SUBOP_BINS;
+    const bool bins_subop_match = (bins_subop == Opcodes::SUBOP_IX_BINS_HI ||
+                                   bins_subop == Opcodes::SUBOP_IX_BINS_MID ||
+                                   bins_subop == Opcodes::SUBOP_IX_BINS_LO);
     const auto mmmm = (opcode >> 16 & OpcodeFields::MASK_IX_BINS_MMMM) >>
                       OpcodeFields::SHIFT_IX_BINS_MMMM;
     const auto k = (opcode >> 16 & OpcodeFields::MASK_IX_BINS_K) >>
@@ -1774,25 +1761,22 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
         const uint8_t pos = lsb;
         const uint8_t width = static_cast<uint8_t>(msb - lsb + 1);
         const uint32_t field_mask =
-            (width >= 32)
-                ? 0xFFFFFFFFu
-                : ((static_cast<uint32_t>(1) << width) - 1u);
+            (width >= 32) ? 0xFFFFFFFFu
+                          : ((static_cast<uint32_t>(1) << width) - 1u);
         const uint32_t insert_mask = field_mask << pos;
         const uint32_t keep_mask = ~insert_mask;
 
         // new_val = (reg2 & keep_mask) | ((reg1 & field_mask) << pos)
-        BN::ExprId src_field =
-            il.ShiftLeft(Sizes::LEN32BIT,
-                         il.And(Sizes::LEN32BIT,
-                                il.Register(Sizes::LEN32BIT, reg1),
-                                il.Const(Sizes::LEN32BIT, field_mask)),
-                         il.Const(Sizes::LEN32BIT, pos));
+        BN::ExprId src_field = il.ShiftLeft(
+            Sizes::LEN32BIT,
+            il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                   il.Const(Sizes::LEN32BIT, field_mask)),
+            il.Const(Sizes::LEN32BIT, pos));
         BN::ExprId kept =
             il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
                    il.Const(Sizes::LEN32BIT, keep_mask));
         il.AddInstruction(il.SetRegister(
-            Sizes::LEN32BIT, reg2,
-            il.Or(Sizes::LEN32BIT, kept, src_field)));
+            Sizes::LEN32BIT, reg2, il.Or(Sizes::LEN32BIT, kept, src_field)));
         len = Sizes::LEN32BIT;
         return true;
       }
@@ -1838,19 +1822,19 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                 Sizes::LEN64BIT, il.Register(Sizes::LEN32BIT, reg2),
                 il.Register(Sizes::LEN32BIT, reg1));
           } else {  // MAC
-            prod = il.MultDoublePrecSigned(
-                Sizes::LEN64BIT, il.Register(Sizes::LEN32BIT, reg2),
-                il.Register(Sizes::LEN32BIT, reg1));
+            prod = il.MultDoublePrecSigned(Sizes::LEN64BIT,
+                                           il.Register(Sizes::LEN32BIT, reg2),
+                                           il.Register(Sizes::LEN32BIT, reg1));
           }
 
           // Build 64-bit accumulator: (GR[reg3+1] << 32) | GR[reg3]
           BN::ExprId acc = il.Or(
               Sizes::LEN64BIT,
-              il.ShiftLeft(Sizes::LEN64BIT,
-                           il.ZeroExtend(Sizes::LEN64BIT,
-                                         il.Register(Sizes::LEN32BIT,
-                                                     mac_reg3_hi)),
-                           il.Const(Sizes::LEN32BIT, 32)),
+              il.ShiftLeft(
+                  Sizes::LEN64BIT,
+                  il.ZeroExtend(Sizes::LEN64BIT,
+                                il.Register(Sizes::LEN32BIT, mac_reg3_hi)),
+                  il.Const(Sizes::LEN32BIT, 32)),
               il.ZeroExtend(Sizes::LEN64BIT,
                             il.Register(Sizes::LEN32BIT, mac_reg3)));
 
@@ -1859,16 +1843,16 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
           // Low 32 bits -> reg4; high 32 bits -> reg4+1. r0 always reads 0 and
           // writes discarded, so skip the SetRegister on r0.
           if (mac_reg4 != Registers::R0) {
-            il.AddInstruction(il.SetRegister(
-                Sizes::LEN32BIT, mac_reg4, il.LowPart(Sizes::LEN32BIT, sum)));
+            il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, mac_reg4,
+                                             il.LowPart(Sizes::LEN32BIT, sum)));
           }
           if (mac_reg4_hi != Registers::R0) {
             il.AddInstruction(il.SetRegister(
                 Sizes::LEN32BIT, mac_reg4_hi,
-                il.LowPart(Sizes::LEN32BIT,
-                           il.LogicalShiftRight(
-                               Sizes::LEN64BIT, sum,
-                               il.Const(Sizes::LEN32BIT, 32)))));
+                il.LowPart(
+                    Sizes::LEN32BIT,
+                    il.LogicalShiftRight(Sizes::LEN64BIT, sum,
+                                         il.Const(Sizes::LEN32BIT, 32)))));
           }
           len = Sizes::LEN32BIT;
           return true;
@@ -1976,8 +1960,8 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             // Halfword swap halfword (V850E3); reg3 = reg2 (value unchanged)
             // Text format: hsh reg2, reg3
             // Flags: OV=0, S=sign(reg3), Z=(reg3==0), CY=(reg2[15:0]==0)
-            il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
-                                             il.Register(Sizes::LEN32BIT, reg2)));
+            il.AddInstruction(il.SetRegister(
+                Sizes::LEN32BIT, reg3, il.Register(Sizes::LEN32BIT, reg2)));
             // TODO note: the flag behavior for this instruction is real weird
             len = Sizes::LEN32BIT;
             return true;
@@ -1997,8 +1981,8 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
           // Condition must be evaluated at runtime, not at lift time; emit
           // an if/else branch so both data paths are represented in LLIL.
           BN::LowLevelILLabel cmov_true, cmov_false, cmov_done;
-          il.AddInstruction(il.If(ConditionToIL(condition_CMOV, il), cmov_true,
-                                  cmov_false));
+          il.AddInstruction(
+              il.If(ConditionToIL(condition_CMOV, il), cmov_true, cmov_false));
           il.MarkLabel(cmov_true);
           il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
                                            il.Register(Sizes::LEN32BIT, reg1)));
@@ -2016,13 +2000,12 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
           // Text format: cmov ccc, imm5, reg2, reg3
           // Semantics: reg3 = cond ? sign_extend(imm5) : reg2
           BN::LowLevelILLabel cmov_true, cmov_false, cmov_done;
-          il.AddInstruction(il.If(ConditionToIL(condition_CMOV, il), cmov_true,
-                                  cmov_false));
-          il.MarkLabel(cmov_true);
           il.AddInstruction(
-              il.SetRegister(Sizes::LEN32BIT, reg3,
-                             il.SignExtend(Sizes::LEN32BIT,
-                                           il.Const(Sizes::LEN8BIT, imm5))));
+              il.If(ConditionToIL(condition_CMOV, il), cmov_true, cmov_false));
+          il.MarkLabel(cmov_true);
+          il.AddInstruction(il.SetRegister(
+              Sizes::LEN32BIT, reg3,
+              il.SignExtend(Sizes::LEN32BIT, il.Const(Sizes::LEN8BIT, imm5))));
           il.AddInstruction(il.Goto(cmov_done));
           il.MarkLabel(cmov_false);
           il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
@@ -2033,10 +2016,10 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
           return true;
         }
       }
-    } else {                                            // 010
-      if (opcode >> 16 & OpcodeFields::OPCODE_BIT_4) {  // 0101
-        if (opcode >> 16 &
-            OpcodeFields::OPCODE_BIT_5) {  // 01011; format XI div/divu/divq/divqu
+    } else {                                              // 010
+      if (opcode >> 16 & OpcodeFields::OPCODE_BIT_4) {    // 0101
+        if (opcode >> 16 & OpcodeFields::OPCODE_BIT_5) {  // 01011; format XI
+                                                          // div/divu/divq/divqu
           // G3MH p. 179 (DIV), 187 (DIVU), 183 (DIVQ), 185 (DIVQU):
           //   reg2 <- reg2 / reg1   (quotient)
           //   reg3 <- (original reg2) % reg1   (remainder)
@@ -2091,11 +2074,10 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
           // sign/zero-extending, gives a divisor with proper sign semantics.
           BN::ExprId divisor =
               is_unsigned
-                  ? il.ZeroExtend(
-                        Sizes::LEN32BIT,
-                        il.And(Sizes::LEN32BIT,
-                               il.Register(Sizes::LEN32BIT, reg1),
-                               il.Const(Sizes::LEN32BIT, 0xFFFF)))
+                  ? il.ZeroExtend(Sizes::LEN32BIT,
+                                  il.And(Sizes::LEN32BIT,
+                                         il.Register(Sizes::LEN32BIT, reg1),
+                                         il.Const(Sizes::LEN32BIT, 0xFFFF)))
                   : il.SignExtend(
                         Sizes::LEN32BIT,
                         il.LowPart(Sizes::LEN16BIT,
@@ -2117,11 +2099,10 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             // single-use; can't share ExprId across two SetRegister calls).
             BN::ExprId divisor2 =
                 is_unsigned
-                    ? il.ZeroExtend(
-                          Sizes::LEN32BIT,
-                          il.And(Sizes::LEN32BIT,
-                                 il.Register(Sizes::LEN32BIT, reg1),
-                                 il.Const(Sizes::LEN32BIT, 0xFFFF)))
+                    ? il.ZeroExtend(Sizes::LEN32BIT,
+                                    il.And(Sizes::LEN32BIT,
+                                           il.Register(Sizes::LEN32BIT, reg1),
+                                           il.Const(Sizes::LEN32BIT, 0xFFFF)))
                     : il.SignExtend(
                           Sizes::LEN32BIT,
                           il.LowPart(Sizes::LEN16BIT,
@@ -2327,18 +2308,18 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                   Sizes::LEN32BIT,
                   il.LogicalShiftRight(
                       Sizes::LEN32BIT,
-                      il.Load(Sizes::LEN32BIT,
-                              il.ConstPointer(
-                                  Sizes::LEN32BIT,
-                                  Registers::SYSTEM_REG_BASE +
-                                      Registers::V850_REG_PSW *
-                                          Registers::REGISTER_SIZE)),
+                      il.Load(
+                          Sizes::LEN32BIT,
+                          il.ConstPointer(Sizes::LEN32BIT,
+                                          Registers::SYSTEM_REG_BASE +
+                                              Registers::V850_REG_PSW *
+                                                  Registers::REGISTER_SIZE)),
                       il.Const(Sizes::LEN8BIT, Flags::FLAG_NP_NMI_PENDING)),
                   il.Const(Sizes::LEN32BIT, 1));
-              il.AddInstruction(il.If(
-                  il.CompareEqual(Sizes::LEN32BIT, psw_np_set,
-                                  il.Const(Sizes::LEN32BIT, 1)),
-                  np_true, np_false));
+              il.AddInstruction(
+                  il.If(il.CompareEqual(Sizes::LEN32BIT, psw_np_set,
+                                        il.Const(Sizes::LEN32BIT, 1)),
+                        np_true, np_false));
 
               // NP == 1: FEPC / FEPSW path
               il.MarkLabel(np_true);
@@ -2353,12 +2334,12 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                                           Registers::SYSTEM_REG_BASE +
                                               Registers::V850_REG_FEPSW *
                                                   Registers::REGISTER_SIZE))));
-              il.AddInstruction(il.Return(il.Load(
-                  Sizes::LEN32BIT,  // pc <- fepc
-                  il.ConstPointer(Sizes::LEN32BIT,
-                                  Registers::SYSTEM_REG_BASE +
-                                      Registers::V850_REG_FEPC *
-                                          Registers::REGISTER_SIZE))));
+              il.AddInstruction(il.Return(
+                  il.Load(Sizes::LEN32BIT,  // pc <- fepc
+                          il.ConstPointer(Sizes::LEN32BIT,
+                                          Registers::SYSTEM_REG_BASE +
+                                              Registers::V850_REG_FEPC *
+                                                  Registers::REGISTER_SIZE))));
 
               // NP == 0: EIPC / EIPSW path
               il.MarkLabel(np_false);
@@ -2373,12 +2354,12 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                                           Registers::SYSTEM_REG_BASE +
                                               Registers::V850_REG_EIPSW *
                                                   Registers::REGISTER_SIZE))));
-              il.AddInstruction(il.Return(il.Load(
-                  Sizes::LEN32BIT,  // pc <- eipc
-                  il.ConstPointer(Sizes::LEN32BIT,
-                                  Registers::SYSTEM_REG_BASE +
-                                      Registers::V850_REG_EIPC *
-                                          Registers::REGISTER_SIZE))));
+              il.AddInstruction(il.Return(
+                  il.Load(Sizes::LEN32BIT,  // pc <- eipc
+                          il.ConstPointer(Sizes::LEN32BIT,
+                                          Registers::SYSTEM_REG_BASE +
+                                              Registers::V850_REG_EIPC *
+                                                  Registers::REGISTER_SIZE))));
 
               len = Sizes::LEN32BIT;
               return true;
@@ -2528,107 +2509,74 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             switch ((opcode >> 16 & OpcodeFields::MASK_SUBOP_BITS_17_18) >>
                     OpcodeFields::SHIFT_SUBOP_BITS_17_18) {
               case Opcodes::SUBOP_SET1:
-                // Set single bit; reg2 holds bit num and reg1 is addr
-                // Text format: set1 reg2, [reg1]
-                il.AddInstruction(il.Store(
-                    Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1),
-                    il.Or(
-                        Sizes::LEN32BIT,
-                        il.Load(Sizes::LEN8BIT,
-                                il.Register(Sizes::LEN32BIT, reg1)),
-                        il.ShiftLeft(Sizes::LEN32BIT,  // Lowest 3 bits of reg2
-                                                       // used to select bit
-                                     il.Const(Sizes::LEN32BIT, 1),
-                                     il.And(Sizes::LEN8BIT,
-                                            il.Register(Sizes::LEN8BIT, reg2),
-                                            il.Const(Sizes::LEN8BIT, 0b111))),
-                        Flags::FLAGS_WRITE_Z)));
-                // TODO need to implement special behavior for Z flag here
+                // Z = !bit_before (G3MH p.255): sample pre-modification bit.
+                bitmask = il.ShiftLeft(
+                    Sizes::LEN8BIT, il.Const(Sizes::LEN8BIT, 1),
+                    il.And(Sizes::LEN8BIT, il.Register(Sizes::LEN8BIT, reg2),
+                           il.Const(Sizes::LEN8BIT, 0b111)));
+                il.AddInstruction(il.And(
+                    Sizes::LEN8BIT,
+                    il.Load(Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1)),
+                    bitmask, Flags::FLAGS_WRITE_Z));
+                il.AddInstruction(
+                    il.Store(Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1),
+                             il.Or(Sizes::LEN8BIT,
+                                   il.Load(Sizes::LEN8BIT,
+                                           il.Register(Sizes::LEN32BIT, reg1)),
+                                   bitmask)));
                 len = Sizes::LEN32BIT;
                 return true;
 
               case Opcodes::SUBOP_NOT1:
-                // Not operation on single bit
-                // Text format: not1 reg2, [reg1]
+                // Z = !bit_before (G3MH): sample pre-modification bit, then
+                // XOR.
                 bitmask = il.ShiftLeft(
-                    Sizes::LEN32BIT,  // Mask to select bit
-                    il.Const(Sizes::LEN32BIT, 1),
-                    il.And(Sizes::LEN8BIT,  // Bitnum is lower 3 bits of reg2
-                           il.Register(Sizes::LEN8BIT, reg2),
+                    Sizes::LEN8BIT, il.Const(Sizes::LEN8BIT, 1),
+                    il.And(Sizes::LEN8BIT, il.Register(Sizes::LEN8BIT, reg2),
                            il.Const(Sizes::LEN8BIT, 0b111)));
-                il.AddInstruction(il.Store(
-                    Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1),
-                    il.Or(
-                        Sizes::LEN32BIT,  // Combine rest of byte with the
-                                          // modified bit
-                        il.And(Sizes::LEN32BIT,  // Get all the bits that are
-                                                 // NOT selected
-                               il.Load(Sizes::LEN8BIT,
-                                       il.Register(Sizes::LEN32BIT, reg1)),
-                               il.Not(Sizes::LEN32BIT, bitmask)),
-                        il.And(
-                            Sizes::LEN32BIT,  // Get the modified bit that IS
-                                              // selected
-                            il.Not(Sizes::LEN32BIT,  // Not operation on that
-                                                     // single bit
-                                   il.And(Sizes::LEN32BIT,  // Mask to get
-                                                            // selected bit only
-                                          il.Load(Sizes::LEN8BIT,
-                                                  il.Register(Sizes::LEN32BIT,
-                                                              reg1)),
-                                          bitmask),
-                                   Flags::FLAGS_WRITE_Z),  // TODO sanity check,
-                                                           // is this the right
-                                                           // place for Z flag?
-                            bitmask))));
+                il.AddInstruction(il.And(
+                    Sizes::LEN8BIT,
+                    il.Load(Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1)),
+                    bitmask, Flags::FLAGS_WRITE_Z));
+                il.AddInstruction(
+                    il.Store(Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1),
+                             il.Xor(Sizes::LEN8BIT,
+                                    il.Load(Sizes::LEN8BIT,
+                                            il.Register(Sizes::LEN32BIT, reg1)),
+                                    bitmask)));
                 len = Sizes::LEN32BIT;
                 return true;
 
               case Opcodes::SUBOP_CLR1:
-                // Clear single bit
-                // Text format: clr1 reg2, [reg1]
-                il.AddInstruction(il.Store(
-                    Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1),
-                    il.And(
-                        Sizes::LEN32BIT,
-                        il.Load(Sizes::LEN8BIT,
-                                il.Register(Sizes::LEN32BIT, reg1)),
-                        il.Not(
-                            Sizes::LEN32BIT,
-                            il.ShiftLeft(
-                                Sizes::LEN32BIT, il.Const(Sizes::LEN32BIT, 1),
-                                il.And(Sizes::LEN8BIT,
-                                       il.Register(Sizes::LEN8BIT, reg2),
-                                       il.Const(
-                                           Sizes::LEN8BIT,
-                                           0b111)))),  // Lowest 3 bits of reg2
-                        Flags::
-                            // used to select bit
-                        FLAGS_WRITE_Z)));  // TODO need to implement special
-                                           // behavior for Z flag here
+                // Z = !bit_before (G3MH p.170): sample pre-modification bit.
+                bitmask = il.ShiftLeft(
+                    Sizes::LEN8BIT, il.Const(Sizes::LEN8BIT, 1),
+                    il.And(Sizes::LEN8BIT, il.Register(Sizes::LEN8BIT, reg2),
+                           il.Const(Sizes::LEN8BIT, 0b111)));
+                il.AddInstruction(il.And(
+                    Sizes::LEN8BIT,
+                    il.Load(Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1)),
+                    bitmask, Flags::FLAGS_WRITE_Z));
+                il.AddInstruction(
+                    il.Store(Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1),
+                             il.And(Sizes::LEN8BIT,
+                                    il.Load(Sizes::LEN8BIT,
+                                            il.Register(Sizes::LEN32BIT, reg1)),
+                                    il.Not(Sizes::LEN8BIT, bitmask))));
                 len = Sizes::LEN32BIT;
                 return true;
 
               case Opcodes::SUBOP_TST1:
-                // Test single bit
-                // Text format: tst1 reg2, [reg1]
+                // Z = !bit (G3MH p.263): And(byte, mask) sets Z=1 iff bit=0.
+                // No memory write.
                 bitmask = il.ShiftLeft(
-                    Sizes::LEN32BIT,  // Mask to select bit
-                    il.Const(Sizes::LEN32BIT, 1),
-                    il.And(Sizes::LEN8BIT,  // Bitnum is lower 3 bits of reg2
-                           il.Register(Sizes::LEN8BIT, reg2),
+                    Sizes::LEN8BIT, il.Const(Sizes::LEN8BIT, 1),
+                    il.And(Sizes::LEN8BIT, il.Register(Sizes::LEN8BIT, reg2),
                            il.Const(Sizes::LEN8BIT, 0b111)));
-                il.AddInstruction(  // tst1 is basically not1 except without
-                                    // storing the result
-                    il.Not(
-                        Sizes::LEN32BIT,  // Not operation on that single bit
-                        il.And(
-                            Sizes::LEN32BIT,  // Mask to get selected bit only
-                            il.Load(Sizes::LEN8BIT,
-                                    il.Register(Sizes::LEN32BIT, reg1)),
-                            bitmask),
-                        Flags::FLAGS_WRITE_Z));  // TODO sanity check, is this
-                                                 // the right place for Z flag?
+                il.AddInstruction(il.And(
+                    Sizes::LEN8BIT,
+                    il.Load(Sizes::LEN8BIT, il.Register(Sizes::LEN32BIT, reg1)),
+                    bitmask, Flags::FLAGS_WRITE_Z));
                 len = Sizes::LEN32BIT;
                 return true;
               default:
@@ -2644,12 +2592,11 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             }
             il.AddInstruction(il.SetRegister(
                 Sizes::LEN32BIT, reg2,
-                il.ShiftLeft(Sizes::LEN32BIT,
-                             il.Register(Sizes::LEN32BIT, reg2),
-                             il.And(Sizes::LEN32BIT,
-                                    il.Register(Sizes::LEN32BIT, reg1),
-                                    il.Const(Sizes::LEN32BIT, 0x1F)),
-                             Flags::FLAGS_WRITE_CY_OV_S_Z)));
+                il.ShiftLeft(
+                    Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
+                    il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                           il.Const(Sizes::LEN32BIT, 0x1F)),
+                    Flags::FLAGS_WRITE_CY_OV_S_Z)));
             return true;
           }
         } else {                                            // 00010
@@ -2663,12 +2610,11 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             }
             il.AddInstruction(il.SetRegister(
                 Sizes::LEN32BIT, reg2,
-                il.ArithShiftRight(Sizes::LEN32BIT,
-                                   il.Register(Sizes::LEN32BIT, reg2),
-                                   il.And(Sizes::LEN32BIT,
-                                          il.Register(Sizes::LEN32BIT, reg1),
-                                          il.Const(Sizes::LEN32BIT, 0x1F)),
-                                   Flags::FLAGS_WRITE_CY_OV_S_Z)));
+                il.ArithShiftRight(
+                    Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
+                    il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                           il.Const(Sizes::LEN32BIT, 0x1F)),
+                    Flags::FLAGS_WRITE_CY_OV_S_Z)));
             return true;
 
           } else {  // 000100; shr
@@ -2681,12 +2627,11 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             }
             il.AddInstruction(il.SetRegister(
                 Sizes::LEN32BIT, reg2,
-                il.LogicalShiftRight(Sizes::LEN32BIT,
-                                     il.Register(Sizes::LEN32BIT, reg2),
-                                     il.And(Sizes::LEN32BIT,
-                                            il.Register(Sizes::LEN32BIT, reg1),
-                                            il.Const(Sizes::LEN32BIT, 0x1F)),
-                                     Flags::FLAGS_WRITE_CY_OV_S_Z)));
+                il.LogicalShiftRight(
+                    Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
+                    il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                           il.Const(Sizes::LEN32BIT, 0x1F)),
+                    Flags::FLAGS_WRITE_CY_OV_S_Z)));
             return true;
           }
         }
@@ -2697,11 +2642,10 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
           // general-purpose register reg2. regID/selID select the banked
           // system register per G3MH p.~195.
           const uint8_t sel_id = static_cast<uint8_t>((opcode >> 27) & 0x1F);
-          const uint32_t sysreg_handle =
-              Registers::SysregHandle(reg1, sel_id);
-          il.AddInstruction(il.SetRegister(
-              Sizes::LEN32BIT, reg2,
-              il.Register(Sizes::LEN32BIT, sysreg_handle)));
+          const uint32_t sysreg_handle = Registers::SysregHandle(reg1, sel_id);
+          il.AddInstruction(
+              il.SetRegister(Sizes::LEN32BIT, reg2,
+                             il.Register(Sizes::LEN32BIT, sysreg_handle)));
           len = Sizes::LEN32BIT;
           return true;
 
@@ -2715,9 +2659,9 @@ bool Format_Ext_Lift(const uint64_t opcode, uint64_t addr, size_t &len,
             const uint8_t sel_id = static_cast<uint8_t>((opcode >> 27) & 0x1F);
             const uint32_t sysreg_handle =
                 Registers::SysregHandle(reg1, sel_id);
-            il.AddInstruction(il.SetRegister(
-                Sizes::LEN32BIT, sysreg_handle,
-                il.Register(Sizes::LEN32BIT, reg2)));
+            il.AddInstruction(
+                il.SetRegister(Sizes::LEN32BIT, sysreg_handle,
+                               il.Register(Sizes::LEN32BIT, reg2)));
 
             len = Sizes::LEN32BIT;
             return true;
@@ -3231,19 +3175,19 @@ static void LiftReturnFromException(BN::LowLevelILFunction &il,
                                     uint32_t psw_src_reg_idx) {
   il.AddInstruction(il.Store(
       Sizes::LEN32BIT,
-      il.ConstPointer(
+      il.ConstPointer(Sizes::LEN32BIT,
+                      Registers::SYSTEM_REG_BASE +
+                          Registers::V850_REG_PSW * Registers::REGISTER_SIZE),
+      il.Load(
           Sizes::LEN32BIT,
-          Registers::SYSTEM_REG_BASE +
-              Registers::V850_REG_PSW * Registers::REGISTER_SIZE),
+          il.ConstPointer(Sizes::LEN32BIT,
+                          Registers::SYSTEM_REG_BASE +
+                              psw_src_reg_idx * Registers::REGISTER_SIZE))));
+  il.AddInstruction(il.Return(
       il.Load(Sizes::LEN32BIT,
               il.ConstPointer(Sizes::LEN32BIT,
                               Registers::SYSTEM_REG_BASE +
-                                  psw_src_reg_idx * Registers::REGISTER_SIZE))));
-  il.AddInstruction(il.Return(il.Load(
-      Sizes::LEN32BIT,
-      il.ConstPointer(Sizes::LEN32BIT,
-                      Registers::SYSTEM_REG_BASE +
-                          pc_src_reg_idx * Registers::REGISTER_SIZE))));
+                                  pc_src_reg_idx * Registers::REGISTER_SIZE))));
 }
 
 bool Eiret::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
@@ -3531,16 +3475,14 @@ bool PushspRhRt::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
 
   for (uint8_t cur = rh; cur <= rt; ++cur) {
     // sp = sp - 4
-    il.AddInstruction(
-        il.SetRegister(Sizes::LEN32BIT, Registers::SP,
-                       il.Sub(Sizes::LEN32BIT,
-                              il.Register(Sizes::LEN32BIT, Registers::SP),
-                              il.Const(Sizes::LEN32BIT, 4))));
+    il.AddInstruction(il.SetRegister(
+        Sizes::LEN32BIT, Registers::SP,
+        il.Sub(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, Registers::SP),
+               il.Const(Sizes::LEN32BIT, 4))));
     // store(sp & ~3, GR[cur])
     il.AddInstruction(il.Store(
         Sizes::LEN32BIT,
-        il.And(Sizes::LEN32BIT,
-               il.Register(Sizes::LEN32BIT, Registers::SP),
+        il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, Registers::SP),
                il.Const(Sizes::LEN32BIT, 0xFFFFFFFCu)),
         il.Register(Sizes::LEN32BIT, cur)));
     if (cur == 31) break;  // guard against wrap
@@ -3578,11 +3520,10 @@ bool PopspRhRt::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                          il.Register(Sizes::LEN32BIT, Registers::SP),
                          il.Const(Sizes::LEN32BIT, 0xFFFFFFFCu)))));
     }
-    il.AddInstruction(
-        il.SetRegister(Sizes::LEN32BIT, Registers::SP,
-                       il.Add(Sizes::LEN32BIT,
-                              il.Register(Sizes::LEN32BIT, Registers::SP),
-                              il.Const(Sizes::LEN32BIT, 4))));
+    il.AddInstruction(il.SetRegister(
+        Sizes::LEN32BIT, Registers::SP,
+        il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, Registers::SP),
+               il.Const(Sizes::LEN32BIT, 4))));
   }
   return true;
 }
@@ -3610,36 +3551,35 @@ static bool LiftSatFmtXi(uint64_t opcode, size_t &len,
   const auto reg1 = ExtractReg1OpcodeField(opcode);
   const auto reg2 = ExtractReg2OpcodeField(opcode);
   const auto reg3 = ExtractReg3OpcodeField(opcode);
-  BN::LowLevelILLabel sat_pos_true, sat_pos_false, sat_neg_true,
-      sat_neg_false, done;
+  BN::LowLevelILLabel sat_pos_true, sat_pos_false, sat_neg_true, sat_neg_false,
+      done;
   BN::ExprId lhs = il.Register(Sizes::LEN32BIT, reverse ? reg1 : reg2);
   BN::ExprId rhs = il.Register(Sizes::LEN32BIT, reverse ? reg2 : reg1);
   BN::ExprId result =
       is_add ? il.Add(Sizes::LEN64BIT, il.Register(Sizes::LEN32BIT, reg1),
                       il.Register(Sizes::LEN32BIT, reg2),
                       Flags::FLAGS_WRITE_CY_OV_S_Z)
-             : il.Sub(Sizes::LEN64BIT, lhs, rhs,
-                      Flags::FLAGS_WRITE_CY_OV_S_Z);
-  il.AddInstruction(il.If(
-      il.CompareSignedLessThan(Sizes::LEN64BIT, result,
-                               il.Const(Sizes::LEN32BIT, 0x80000000)),
-      sat_neg_true, sat_neg_false));
+             : il.Sub(Sizes::LEN64BIT, lhs, rhs, Flags::FLAGS_WRITE_CY_OV_S_Z);
+  il.AddInstruction(
+      il.If(il.CompareSignedLessThan(Sizes::LEN64BIT, result,
+                                     il.Const(Sizes::LEN32BIT, 0x80000000)),
+            sat_neg_true, sat_neg_false));
   il.MarkLabel(sat_neg_true);
   il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
                                    il.Const(Sizes::LEN32BIT, 0x80000000)));
-  il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                               il.Const(Sizes::LEN8BIT, 1)));
+  il.AddInstruction(
+      il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
   il.AddInstruction(il.Goto(done));
   il.MarkLabel(sat_neg_false);
-  il.AddInstruction(il.If(
-      il.CompareSignedGreaterThan(Sizes::LEN64BIT, result,
-                                  il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)),
-      sat_pos_true, sat_pos_false));
+  il.AddInstruction(
+      il.If(il.CompareSignedGreaterThan(Sizes::LEN64BIT, result,
+                                        il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)),
+            sat_pos_true, sat_pos_false));
   il.MarkLabel(sat_pos_true);
   il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3,
                                    il.Const(Sizes::LEN32BIT, 0x7FFFFFFF)));
-  il.AddInstruction(il.SetFlag(Flags::FLAG_SAT_SATURATED,
-                               il.Const(Sizes::LEN8BIT, 1)));
+  il.AddInstruction(
+      il.SetFlag(Flags::FLAG_SAT_SATURATED, il.Const(Sizes::LEN8BIT, 1)));
   il.AddInstruction(il.Goto(done));
   il.MarkLabel(sat_pos_false);
   il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, result));
@@ -3685,8 +3625,7 @@ bool CaxiR1R2R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
 
   // if (GR[reg2] == tmp) goto true else goto false
   il.AddInstruction(
-      il.If(il.CompareEqual(Sizes::LEN32BIT,
-                            il.Register(Sizes::LEN32BIT, reg2),
+      il.If(il.CompareEqual(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
                             il.Register(Sizes::LEN32BIT, tmp)),
             true_label, false_label));
 
@@ -3719,9 +3658,9 @@ bool JarlR1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
   len = Sizes::LEN32BIT;
 
   if (reg3 != Registers::R0) {
-    il.AddInstruction(il.SetRegister(
-        Sizes::LEN32BIT, reg3,
-        il.Const(Sizes::LEN32BIT, addr + Sizes::LEN32BIT)));
+    il.AddInstruction(
+        il.SetRegister(Sizes::LEN32BIT, reg3,
+                       il.Const(Sizes::LEN32BIT, addr + Sizes::LEN32BIT)));
   }
   il.AddInstruction(
       il.Call(il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
@@ -3732,8 +3671,7 @@ bool JarlR1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
 /* SNOOZE — pause until release event. Treated as an observable no-op so
  * control flow continues to the next instruction. */
 bool Snooze::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
-                  BN::LowLevelILFunction &il,
-                  BinaryNinja::Architecture *arch) {
+                  BN::LowLevelILFunction &il, BinaryNinja::Architecture *arch) {
   len = Sizes::LEN32BIT;
   il.AddInstruction(il.Nop());
   return true;
@@ -3779,22 +3717,21 @@ static void LiftSchCommon(const uint64_t opcode, size_t &len,
   const auto reg3 = ExtractReg3OpcodeField(opcode);
   constexpr size_t W = Sizes::LEN32BIT;
 
-  il.AddInstruction(il.Intrinsic(
-      {BN::RegisterOrFlag::Register(reg3)}, intrinsic_id,
-      {il.Register(W, reg2)}));
+  il.AddInstruction(il.Intrinsic({BN::RegisterOrFlag::Register(reg3)},
+                                 intrinsic_id, {il.Register(W, reg2)}));
 
   // S, OV are always cleared.
   il.AddInstruction(il.SetFlag(Flags::FLAG_S_SIGN, il.Const(0, 0)));
   il.AddInstruction(il.SetFlag(Flags::FLAG_OV_OVERFLOW, il.Const(0, 0)));
   // Z = (reg3 == 0) — "not found".
-  il.AddInstruction(il.SetFlag(
-      Flags::FLAG_Z_ZERO,
-      il.CompareEqual(W, il.Register(W, reg3), il.Const(W, 0))));
+  il.AddInstruction(
+      il.SetFlag(Flags::FLAG_Z_ZERO,
+                 il.CompareEqual(W, il.Register(W, reg3), il.Const(W, 0))));
   // CY = (reg3 == 32) — match at the farthest bit (MSB for SCH*R / LSB for
   // SCH*L). 32 also happens to be the max legal value.
-  il.AddInstruction(il.SetFlag(
-      Flags::FLAG_CY_CARRY,
-      il.CompareEqual(W, il.Register(W, reg3), il.Const(W, 32))));
+  il.AddInstruction(
+      il.SetFlag(Flags::FLAG_CY_CARRY,
+                 il.CompareEqual(W, il.Register(W, reg3), il.Const(W, 32))));
 }
 
 bool Sch0lR2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
@@ -3836,17 +3773,15 @@ bool FpuDouble::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
   const auto reg1 = ExtractReg1OpcodeField(opcode);
   const auto reg2 = ExtractReg2OpcodeField(opcode);
   const auto reg3 = ExtractReg3OpcodeField(opcode);
-  il.AddInstruction(il.Intrinsic(
-      {BN::RegisterOrFlag::Register(reg3)},
-      FpuIntrinsic::FpuD,
-      {il.Register(W, reg1), il.Register(W, reg2)}));
+  il.AddInstruction(il.Intrinsic({BN::RegisterOrFlag::Register(reg3)},
+                                 FpuIntrinsic::FpuD,
+                                 {il.Register(W, reg1), il.Register(W, reg2)}));
   len = Sizes::LEN32BIT;
   return true;
 }
 
 bool FpuSingle::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
-                     BN::LowLevelILFunction &il,
-                     BN::Architecture * /*arch*/) {
+                     BN::LowLevelILFunction &il, BN::Architecture * /*arch*/) {
   const auto reg1 = ExtractReg1OpcodeField(opcode);
   const auto reg2 = ExtractReg2OpcodeField(opcode);
   const auto reg3 = ExtractReg3OpcodeField(opcode);
@@ -3996,11 +3931,10 @@ bool FpuSingle::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
     /* ---- CMOVF.S: reg3 = FPSR.CC[fcbit] ? reg1 : reg2 ---- */
     case FpuOp::CmovfS: {
       /* FPSR CC bits live in bits 31..24. fcbit selects which CCn. */
-      auto ccn = il.And(
-          W,
-          il.LogicalShiftRight(W, il.Register(W, Registers::FPSR),
-                               il.Const(W, 24 + fcbit)),
-          il.Const(W, 1));
+      auto ccn = il.And(W,
+                        il.LogicalShiftRight(W, il.Register(W, Registers::FPSR),
+                                             il.Const(W, 24 + fcbit)),
+                        il.Const(W, 1));
       BN::LowLevelILLabel t, f, done;
       il.AddInstruction(il.If(ccn, t, f));
       il.MarkLabel(t);
@@ -4016,8 +3950,7 @@ bool FpuSingle::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
     /* ---- TRFSR: PSW.Z <- FPSR.CC[fcbit] ---- */
     case FpuOp::Trfsr:
       Intr(FpuIntrinsic::Trfsr,
-           {il.Const(W, fcbit), il.Register(W, Registers::FPSR)},
-           {});
+           {il.Const(W, fcbit), il.Register(W, Registers::FPSR)}, {});
       break;
   }
 
@@ -4101,8 +4034,8 @@ bool LddwDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                           BN::LowLevelILFunction &il,
                           BinaryNinja::Architecture *arch) {
   const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
-  const auto reg3 =
-      static_cast<uint8_t>(LiftExtractXIVReg3(opcode) & static_cast<uint8_t>(~1u));
+  const auto reg3 = static_cast<uint8_t>(LiftExtractXIVReg3(opcode) &
+                                         static_cast<uint8_t>(~1u));
   const int32_t disp = LiftExtractXIVDisp23(opcode, /*aligned=*/true);
 
   // Low word → reg3
@@ -4110,15 +4043,14 @@ bool LddwDisp23R1R3::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
       Sizes::LEN32BIT, reg3,
       il.Load(Sizes::LEN32BIT,
               il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
-                     il.Const(Sizes::LEN32BIT,
-                               static_cast<uint32_t>(disp))))));
+                     il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp))))));
   // High word → reg3+1
   il.AddInstruction(il.SetRegister(
       Sizes::LEN32BIT, static_cast<uint8_t>(reg3 + 1),
-      il.Load(Sizes::LEN32BIT,
-              il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
-                     il.Const(Sizes::LEN32BIT,
-                               static_cast<uint32_t>(disp + 4))))));
+      il.Load(
+          Sizes::LEN32BIT,
+          il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                 il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp + 4))))));
   len = Sizes::LEN48BIT;
   return true;
 }
@@ -4139,16 +4071,16 @@ bool StdwR3Disp23R1::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                           BN::LowLevelILFunction &il,
                           BinaryNinja::Architecture *arch) {
   const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
-  const auto reg3 =
-      static_cast<uint8_t>(LiftExtractXIVReg3(opcode) & static_cast<uint8_t>(~1u));
+  const auto reg3 = static_cast<uint8_t>(LiftExtractXIVReg3(opcode) &
+                                         static_cast<uint8_t>(~1u));
   const int32_t disp = LiftExtractXIVDisp23(opcode, /*aligned=*/true);
 
   // Low word: store reg3 at adr
-  il.AddInstruction(il.Store(
-      Sizes::LEN32BIT,
-      il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
-             il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp))),
-      il.Register(Sizes::LEN32BIT, reg3)));
+  il.AddInstruction(
+      il.Store(Sizes::LEN32BIT,
+               il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                      il.Const(Sizes::LEN32BIT, static_cast<uint32_t>(disp))),
+               il.Register(Sizes::LEN32BIT, reg3)));
   // High word: store reg3+1 at adr+4
   il.AddInstruction(il.Store(
       Sizes::LEN32BIT,
@@ -4178,8 +4110,7 @@ static bool Lift_PIpD_Load(const uint64_t opcode, size_t &len,
       (static_cast<uint16_t>(opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
       OpcodeFields::SHIFT_XI_REG3);
 
-  BN::ExprId load_il =
-      il.Load(access_size, il.Register(Sizes::LEN32BIT, reg1));
+  BN::ExprId load_il = il.Load(access_size, il.Register(Sizes::LEN32BIT, reg1));
   BN::ExprId extended = sign_extend ? il.SignExtend(Sizes::LEN32BIT, load_il)
                                     : il.ZeroExtend(Sizes::LEN32BIT, load_il);
   il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, extended));
@@ -4220,35 +4151,35 @@ static bool Lift_PIpD_Store(const uint64_t opcode, size_t &len,
   return true;
 }
 
-#define V850_PIPD_LOAD_LIFT(CLS, ACCESS, SIGN, DELTA)                      \
-  bool CLS::Lift(const uint64_t opcode, uint64_t addr, size_t &len,        \
-                 BN::LowLevelILFunction &il,                               \
-                 BinaryNinja::Architecture *arch) {                        \
-    return Lift_PIpD_Load(opcode, len, il, ACCESS, SIGN, DELTA);           \
+#define V850_PIPD_LOAD_LIFT(CLS, ACCESS, SIGN, DELTA)               \
+  bool CLS::Lift(const uint64_t opcode, uint64_t addr, size_t &len, \
+                 BN::LowLevelILFunction &il,                        \
+                 BinaryNinja::Architecture *arch) {                 \
+    return Lift_PIpD_Load(opcode, len, il, ACCESS, SIGN, DELTA);    \
   }
-#define V850_PIPD_STORE_LIFT(CLS, ACCESS, DELTA)                           \
-  bool CLS::Lift(const uint64_t opcode, uint64_t addr, size_t &len,        \
-                 BN::LowLevelILFunction &il,                               \
-                 BinaryNinja::Architecture *arch) {                        \
-    return Lift_PIpD_Store(opcode, len, il, ACCESS, DELTA);                \
+#define V850_PIPD_STORE_LIFT(CLS, ACCESS, DELTA)                    \
+  bool CLS::Lift(const uint64_t opcode, uint64_t addr, size_t &len, \
+                 BN::LowLevelILFunction &il,                        \
+                 BinaryNinja::Architecture *arch) {                 \
+    return Lift_PIpD_Store(opcode, len, il, ACCESS, DELTA);         \
   }
 
-V850_PIPD_LOAD_LIFT(LdbPostIncR1R3,  Sizes::LEN8BIT,  true,  +1)
-V850_PIPD_LOAD_LIFT(LdhPostIncR1R3,  Sizes::LEN16BIT, true,  +2)
-V850_PIPD_LOAD_LIFT(LdwPostIncR1R3,  Sizes::LEN32BIT, true,  +4)
-V850_PIPD_LOAD_LIFT(LdbuPostIncR1R3, Sizes::LEN8BIT,  false, +1)
+V850_PIPD_LOAD_LIFT(LdbPostIncR1R3, Sizes::LEN8BIT, true, +1)
+V850_PIPD_LOAD_LIFT(LdhPostIncR1R3, Sizes::LEN16BIT, true, +2)
+V850_PIPD_LOAD_LIFT(LdwPostIncR1R3, Sizes::LEN32BIT, true, +4)
+V850_PIPD_LOAD_LIFT(LdbuPostIncR1R3, Sizes::LEN8BIT, false, +1)
 V850_PIPD_LOAD_LIFT(LdhuPostIncR1R3, Sizes::LEN16BIT, false, +2)
-V850_PIPD_LOAD_LIFT(LdbPreDecR1R3,   Sizes::LEN8BIT,  true,  -1)
-V850_PIPD_LOAD_LIFT(LdhPreDecR1R3,   Sizes::LEN16BIT, true,  -2)
-V850_PIPD_LOAD_LIFT(LdwPreDecR1R3,   Sizes::LEN32BIT, true,  -4)
-V850_PIPD_LOAD_LIFT(LdbuPreDecR1R3,  Sizes::LEN8BIT,  false, -1)
-V850_PIPD_LOAD_LIFT(LdhuPreDecR1R3,  Sizes::LEN16BIT, false, -2)
-V850_PIPD_STORE_LIFT(StbPostIncR3R1, Sizes::LEN8BIT,  +1)
+V850_PIPD_LOAD_LIFT(LdbPreDecR1R3, Sizes::LEN8BIT, true, -1)
+V850_PIPD_LOAD_LIFT(LdhPreDecR1R3, Sizes::LEN16BIT, true, -2)
+V850_PIPD_LOAD_LIFT(LdwPreDecR1R3, Sizes::LEN32BIT, true, -4)
+V850_PIPD_LOAD_LIFT(LdbuPreDecR1R3, Sizes::LEN8BIT, false, -1)
+V850_PIPD_LOAD_LIFT(LdhuPreDecR1R3, Sizes::LEN16BIT, false, -2)
+V850_PIPD_STORE_LIFT(StbPostIncR3R1, Sizes::LEN8BIT, +1)
 V850_PIPD_STORE_LIFT(SthPostIncR3R1, Sizes::LEN16BIT, +2)
 V850_PIPD_STORE_LIFT(StwPostIncR3R1, Sizes::LEN32BIT, +4)
-V850_PIPD_STORE_LIFT(StbPreDecR3R1,  Sizes::LEN8BIT,  -1)
-V850_PIPD_STORE_LIFT(SthPreDecR3R1,  Sizes::LEN16BIT, -2)
-V850_PIPD_STORE_LIFT(StwPreDecR3R1,  Sizes::LEN32BIT, -4)
+V850_PIPD_STORE_LIFT(StbPreDecR3R1, Sizes::LEN8BIT, -1)
+V850_PIPD_STORE_LIFT(SthPreDecR3R1, Sizes::LEN16BIT, -2)
+V850_PIPD_STORE_LIFT(StwPreDecR3R1, Sizes::LEN32BIT, -4)
 
 #undef V850_PIPD_LOAD_LIFT
 #undef V850_PIPD_STORE_LIFT
@@ -4266,22 +4197,19 @@ static bool LiftAdfSbfCcc(const uint64_t opcode, size_t &len,
                           BN::LowLevelILFunction &il, bool is_add) {
   const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
   const auto reg2 = ExtractReg2OpcodeField(static_cast<uint16_t>(opcode));
-  const auto reg3 = static_cast<uint8_t>(
-      ((opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
-      OpcodeFields::SHIFT_XI_REG3);
+  const auto reg3 =
+      static_cast<uint8_t>(((opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
+                           OpcodeFields::SHIFT_XI_REG3);
   const auto cond = ExtractTypeXICond(static_cast<uint32_t>(opcode));
 
-  BN::ExprId cond_bit =
-      il.BoolToInt(Sizes::LEN32BIT, ConditionToIL(cond, il));
+  BN::ExprId cond_bit = il.BoolToInt(Sizes::LEN32BIT, ConditionToIL(cond, il));
   BN::ExprId result;
   if (is_add) {
-    result = il.AddCarry(Sizes::LEN32BIT,
-                         il.Register(Sizes::LEN32BIT, reg2),
+    result = il.AddCarry(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
                          il.Register(Sizes::LEN32BIT, reg1), cond_bit,
                          Flags::FLAGS_WRITE_CY_OV_S_Z);
   } else {
-    result = il.SubBorrow(Sizes::LEN32BIT,
-                          il.Register(Sizes::LEN32BIT, reg2),
+    result = il.SubBorrow(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
                           il.Register(Sizes::LEN32BIT, reg1), cond_bit,
                           Flags::FLAGS_WRITE_CY_OV_S_Z);
   }
@@ -4312,12 +4240,12 @@ bool SbfCccR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
 static bool LiftRotl(const uint64_t opcode, size_t &len,
                      BN::LowLevelILFunction &il, BN::ExprId shift_expr) {
   const auto reg2 = ExtractReg2OpcodeField(static_cast<uint16_t>(opcode));
-  const auto reg3 = static_cast<uint8_t>(
-      ((opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
-      OpcodeFields::SHIFT_XI_REG3);
-  BN::ExprId rotated = il.RotateLeft(Sizes::LEN32BIT,
-                                     il.Register(Sizes::LEN32BIT, reg2),
-                                     shift_expr, Flags::FLAGS_WRITE_S_Z);
+  const auto reg3 =
+      static_cast<uint8_t>(((opcode >> 16) & OpcodeFields::MASK_XI_REG3) >>
+                           OpcodeFields::SHIFT_XI_REG3);
+  BN::ExprId rotated =
+      il.RotateLeft(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg2),
+                    shift_expr, Flags::FLAGS_WRITE_S_Z);
   if (reg3 != Registers::R0) {
     il.AddInstruction(il.SetRegister(Sizes::LEN32BIT, reg3, rotated));
   } else {
@@ -4331,8 +4259,7 @@ bool RotlR1R2R3::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
                       BN::LowLevelILFunction &il,
                       BinaryNinja::Architecture * /*arch*/) {
   const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
-  BN::ExprId shift = il.And(Sizes::LEN32BIT,
-                            il.Register(Sizes::LEN32BIT, reg1),
+  BN::ExprId shift = il.And(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
                             il.Const(Sizes::LEN32BIT, 0x1F));
   return LiftRotl(opcode, len, il, shift);
 }
@@ -4354,35 +4281,31 @@ bool LoopR1Disp16::Lift(const uint64_t opcode, uint64_t addr, size_t &len,
                         BinaryNinja::Architecture *arch) {
   const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
   const uint16_t hw2 = static_cast<uint16_t>(opcode >> 16);
-  const uint16_t disp_field =
-      static_cast<uint16_t>((hw2 & Opcodes::MASK_LOOP_DISP) >>
-                            Opcodes::SHIFT_LOOP_DISP);
+  const uint16_t disp_field = static_cast<uint16_t>(
+      (hw2 & Opcodes::MASK_LOOP_DISP) >> Opcodes::SHIFT_LOOP_DISP);
   const uint32_t target =
       static_cast<uint32_t>(addr) - (static_cast<uint32_t>(disp_field) << 1);
 
   len = Sizes::LEN32BIT;
 
   // reg1 = reg1 - 1 (flag write on the add of -1, matching SLEIGH).
-  il.AddInstruction(il.SetRegister(
-      Sizes::LEN32BIT, reg1,
-      il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
-             il.Const(Sizes::LEN32BIT, 0xFFFFFFFFu),
-             Flags::FLAGS_WRITE_CY_OV_S_Z)));
+  il.AddInstruction(
+      il.SetRegister(Sizes::LEN32BIT, reg1,
+                     il.Add(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                            il.Const(Sizes::LEN32BIT, 0xFFFFFFFFu),
+                            Flags::FLAGS_WRITE_CY_OV_S_Z)));
 
   BN::ExprId dest_if_true = il.Const(Sizes::LEN32BIT, target);
-  BN::ExprId dest_if_false =
-      il.Const(Sizes::LEN32BIT, addr + Sizes::LEN32BIT);
+  BN::ExprId dest_if_false = il.Const(Sizes::LEN32BIT, addr + Sizes::LEN32BIT);
   BNLowLevelILLabel *t = il.GetLabelForAddress(arch, target);
-  BNLowLevelILLabel *f =
-      il.GetLabelForAddress(arch, addr + Sizes::LEN32BIT);
+  BNLowLevelILLabel *f = il.GetLabelForAddress(arch, addr + Sizes::LEN32BIT);
   BN::LowLevelILLabel local_true, local_false;
   const bool indirect_true = (t == nullptr);
   const bool indirect_false = (f == nullptr);
-  il.AddInstruction(il.If(il.CompareNotEqual(Sizes::LEN32BIT,
-                                             il.Register(Sizes::LEN32BIT, reg1),
-                                             il.Const(Sizes::LEN32BIT, 0)),
-                          t ? *t : local_true,
-                          f ? *f : local_false));
+  il.AddInstruction(il.If(
+      il.CompareNotEqual(Sizes::LEN32BIT, il.Register(Sizes::LEN32BIT, reg1),
+                         il.Const(Sizes::LEN32BIT, 0)),
+      t ? *t : local_true, f ? *f : local_false));
   if (indirect_true) {
     il.MarkLabel(local_true);
     il.AddInstruction(il.Jump(dest_if_true));
@@ -4403,14 +4326,14 @@ bool CacheOpR1::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &len,
   const auto reg1 = ExtractReg1OpcodeField(static_cast<uint16_t>(opcode));
   const uint8_t cacheop = static_cast<uint8_t>(
       ((ExtractReg2OpcodeField(static_cast<uint16_t>(opcode)) &
-        Opcodes::MASK_REG2_LO2) << 5) |
+        Opcodes::MASK_REG2_LO2)
+       << 5) |
       ((static_cast<uint16_t>(opcode >> 16) &
         Opcodes::MASK_CACHE_PREF_OP2731) >>
        Opcodes::SHIFT_CACHE_PREF_OP2731));
-  il.AddInstruction(il.Intrinsic(
-      {}, CacheIntrinsic::Cache,
-      {il.Const(Sizes::LEN32BIT, cacheop),
-       il.Register(Sizes::LEN32BIT, reg1)}));
+  il.AddInstruction(il.Intrinsic({}, CacheIntrinsic::Cache,
+                                 {il.Const(Sizes::LEN32BIT, cacheop),
+                                  il.Register(Sizes::LEN32BIT, reg1)}));
   len = Sizes::LEN32BIT;
   return true;
 }
@@ -4452,9 +4375,8 @@ bool Syscall::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &out_len,
   // intrinsic then let fallthrough continue. Treating as an observable
   // side-effecting call preserves caller analysis without inventing a
   // register model.
-  il.AddInstruction(il.Intrinsic(
-      {}, SystemIntrinsic::Syscall,
-      {il.Const(Sizes::LEN32BIT, vector)}));
+  il.AddInstruction(il.Intrinsic({}, SystemIntrinsic::Syscall,
+                                 {il.Const(Sizes::LEN32BIT, vector)}));
   out_len = Sizes::LEN32BIT;
   return true;
 }
@@ -4479,9 +4401,8 @@ bool Dbtag::Lift(const uint64_t opcode, uint64_t /*addr*/, size_t &out_len,
   const uint16_t imm_hi = static_cast<uint16_t>((hw2 >> 11) & 0x1F);
   const uint16_t imm_lo = static_cast<uint16_t>(opcode & 0x1F);
   const uint16_t imm10 = static_cast<uint16_t>((imm_hi << 5) | imm_lo);
-  il.AddInstruction(il.Intrinsic(
-      {}, SystemIntrinsic::Dbtag,
-      {il.Const(Sizes::LEN32BIT, imm10)}));
+  il.AddInstruction(il.Intrinsic({}, SystemIntrinsic::Dbtag,
+                                 {il.Const(Sizes::LEN32BIT, imm10)}));
   out_len = Sizes::LEN32BIT;
   return true;
 }
