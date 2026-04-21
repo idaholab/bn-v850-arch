@@ -3,6 +3,8 @@
 
 #include "util.h"
 
+#include <cstdio>
+
 #include "conditions.h"
 #include "flags.h"
 #include "opcodes.h"
@@ -79,39 +81,136 @@ const char *RegToStr(const uint8_t reg_id) {
     case Registers::R31:
       return "lp";
     default:
-      return nullptr;
+      break;
   }
+  if (reg_id == Registers::FPSR) {
+    return "fpsr";
+  }
+  return nullptr;
 }
 
 const char *SystemRegToStr(const uint8_t reg_id) {
-  switch (reg_id) {
-    /* System Registers */
-    case Registers::V850_REG_EIPC:
-      return "eipc";
-    case Registers::V850_REG_EIPSW:
-      return "eipsw";
-    case Registers::V850_REG_FEPC:
-      return "fepc";
-    case Registers::V850_REG_FEPSW:
-      return "fepsw";
-    case Registers::V850_REG_ECR:
-      return "ecr";
-    case Registers::V850_REG_PSW:
-      return "psw";
-    case Registers::V850_REG_CTPC:
-      return "ctpc";
-    case Registers::V850_REG_CTPSW:
-      return "ctpsw";
-    case Registers::V850_REG_DBPC:
-      return "dbpc";
-    case Registers::V850_REG_DBPSW:
-      return "dbpsw";
-    case Registers::V850_REG_CTBP:
-      return "ctbp";
+  /* Legacy V850 (selID = 0) system register name. Kept for compatibility
+   * with paths that haven't been migrated to the banked API. */
+  return SystemRegToStrBanked(reg_id, 0);
+}
 
+const char *SystemRegToStrBanked(const uint8_t regID, const uint8_t selID) {
+  /* Names sourced from the RH850G3MH Software Manual
+   * (R01US0143EJ0130 Rev 1.30, 2016-12-22). Coverage:
+   *   selID 0 : Basic system registers    (Table 3.3,  p.39)
+   *   selID 1 : Machine configuration     (Table 3.3,  p.39)
+   *   selID 2 : Interrupt + memory-error  (Tables 3.3/3.30, p.39/58)
+   *   selID 4 : Cache control             (Table 3.53, p.77)
+   *   selID 5 : MPU mode / region control (Table 3.41, p.69)
+   *   selID 6 : MPU protection areas 0-7  (Table 3.41, p.69)
+   *   selID 7 : MPU protection areas 8-15 (Table 3.41, p.70)
+   * FPU system registers (FPSR..FPCFG) live in selID 0 (SR6..SR10) per
+   * Table 3.35 on p.62. Other banked selIDs observed on G3MH firmware
+   * but not individually tabulated here fall through to "sr<regID>_<selID>"
+   * (canonical RH850 assembler spelling) rather than returning nullptr,
+   * so the decompiler never sees INVALID_REG_ID. */
+  switch (selID) {
+    case 0:
+      switch (regID) {
+        case 0: return "eipc";
+        case 1: return "eipsw";
+        case 2: return "fepc";
+        case 3: return "fepsw";
+        case 4: return "ecr";      /* V850 base bank name; G3MH retires ECR */
+        case 5: return "psw";
+        case 6: return "fpsr";     /* FPU, p.62 */
+        case 7: return "fpepc";    /* FPU, p.62 */
+        case 8: return "fpst";     /* FPU, p.62 */
+        case 9: return "fpcc";     /* FPU, p.62 */
+        case 10: return "fpcfg";   /* FPU, p.62 */
+        case 13: return "eiic";    /* EI-level exception cause */
+        case 14: return "feic";    /* FE-level exception cause */
+        case 16: return "ctpc";
+        case 17: return "ctpsw";
+        case 18: return "dbpc";
+        case 19: return "dbpsw";
+        case 20: return "ctbp";
+        case 28: return "eiwr";
+        case 29: return "fewr";
+        case 31: return "bsel";
+        default: break;
+      }
+      break;
+    case 1:
+      switch (regID) {
+        case 0: return "mcfg0";
+        case 2: return "rbase";
+        case 3: return "ebase";
+        case 4: return "intbp";
+        case 5: return "mctl";
+        case 6: return "pid";
+        case 11: return "sccfg";
+        case 12: return "scbp";
+        default: break;
+      }
+      break;
+    case 2:
+      switch (regID) {
+        case 0: return "htcfg0";
+        case 6: return "mea";
+        case 7: return "asid";
+        case 8: return "mei";
+        case 10: return "ispr";    /* interrupt regs, p.58 */
+        case 11: return "pmr";
+        case 12: return "icsr";
+        case 13: return "intcfg";
+        default: break;
+      }
+      break;
+    case 4:
+      switch (regID) {
+        case 16: return "ictagl";
+        case 17: return "ictagh";
+        case 18: return "icdatl";
+        case 19: return "icdath";
+        case 24: return "icctrl";
+        case 26: return "iccfg";
+        case 28: return "icerr";
+        default: break;
+      }
+      break;
+    case 5:
+      switch (regID) {
+        case 0: return "mpm";
+        case 1: return "mprc";
+        case 4: return "mpbrgn";
+        case 5: return "mptrgn";
+        case 8: return "mca";
+        case 9: return "mcs";
+        case 10: return "mcc";
+        case 11: return "mcr";
+        default: break;
+      }
+      break;
+    case 6:
+    case 7: {
+      /* MPU protection areas 0..15 — each entry has 3 regs (LA, UA, AT)
+       * laid out in a regular pattern. Return nullptr to fall through to
+       * the generic sr<r>_<s> naming so we don't mis-label partial areas. */
+      break;
+    }
     default:
-      return nullptr;
+      break;
   }
+  /* Thread-local fallback name for banked regs not individually listed. */
+  thread_local char fallback[16];
+  std::snprintf(fallback, sizeof(fallback), "sr%u_%u",
+                static_cast<unsigned>(regID), static_cast<unsigned>(selID));
+  return fallback;
+}
+
+const char *SysregHandleToStr(const uint32_t handle) {
+  if (!Registers::IsSysregHandle(handle)) {
+    return nullptr;
+  }
+  return SystemRegToStrBanked(Registers::SysregHandleRegID(handle),
+                              Registers::SysregHandleSelID(handle));
 }
 
 const char *FlagToStr(const uint32_t flag_id) {
@@ -205,8 +304,12 @@ BN::ExprId ConditionToIL(const uint8_t condition, BN::LowLevelILFunction &il) {
     case Conditions::CONDITION_CODE_T:
       return il.Const(Sizes::LEN64BIT, 1);  // unconditional
     case Conditions::CONDITION_CODE_SA:
-      // if SAT flag set - behavior not yet implemented, TODO
-      return il.Unimplemented();
+      // BSA / NSA — branch if SAT flag set. SAT is sticky per G3MH §7
+      // (cumulative; cleared only by LDSR of PSW). Compare the raw flag
+      // bit against zero; PSW.SAT is modelled as a standalone flag.
+      return il.CompareNotEqual(
+          Sizes::LEN8BIT, il.Flag(Flags::FLAG_SAT_SATURATED),
+          il.Const(Sizes::LEN8BIT, 0));
     case Conditions::CONDITION_CODE_LT:
       return il.FlagCondition(LLFC_SLT);
     case Conditions::CONDITION_CODE_GE:
@@ -279,13 +382,13 @@ void GenerateTextForRegisterList12(
     result.emplace_back(RegisterToken, "r30", Registers::EP);
     result.emplace_back(OperandSeparatorToken, ", ");
   }
-  if (opcode & OpcodeFields::MASK_XIII_BIT_R31 << 16) {
+  if (opcode & (OpcodeFields::MASK_XIII_BIT_R31 << 16)) {
     result.emplace_back(RegisterToken, "r31", Registers::R31);
     result.emplace_back(OperandSeparatorToken, ", ");
   }
   // If at least one register was specified, remove the last ", " in the list
-  if (opcode & OpcodeFields::MASK_XIII_LIST12_WORD1 |
-      opcode & OpcodeFields::MASK_XIII_LIST12_WORD2 << 16 != 0) {
+  if ((opcode & OpcodeFields::MASK_XIII_LIST12_WORD1) ||
+      (opcode & (OpcodeFields::MASK_XIII_LIST12_WORD2 << 16))) {
     result.pop_back();
   }
   result.emplace_back(OperandSeparatorToken, "}");

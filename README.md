@@ -5,8 +5,10 @@ A Binary Ninja architecture plugin providing support for the V850 family of inst
 This architecture plugin provides support for the disassembling and lifting of V850 instructions.
 
 ### Features
-- Full disassembly support for the V850/V850E1 instruction sets
-- Partial lifting to Binary Ninja's low level IL
+- Disassembly support for V850, V850E1, V850E2, and V850E3/RH850 G3MH instruction sets
+- Near-complete lifting to Binary Ninja's Low Level IL, including FPU, saturated arithmetic, synchronization barriers, 64-bit load/store, and banked system registers
+- Correct CC-RH ABI calling convention (argument, caller-saved, and callee-saved registers)
+- ELF loader support for EM_V800 binaries
 
 ## Installation
 ### Binary Download
@@ -29,7 +31,7 @@ cd binaryninja-api
 
 # Set up CMake files
 echo -e "\nadd_subdirectory(plugins)" >> CMakeLists.txt
-echo -e "\nadd_subdirectory(v850)" >> plugins/CMakeLists.txt
+echo -e "\nadd_subdirectory(bn-v850-arch)" >> plugins/CMakeLists.txt
 
 # Download V850 architecture source
 cd plugins
@@ -37,11 +39,11 @@ git clone https://github.com/idaholab/bn-v850-arch.git
 cd ..
 
 # Build
-cmake -DCMAKE_BUILD_TYPE=release -DHEADLESS=yes .
-cmake --build . --target all -j
+cmake -DCMAKE_BUILD_TYPE=release -DHEADLESS=yes -DBN_ALLOW_STUBS=ON -B build .
+cmake --build build -j --target bn-v850-arch
 
 # Install
-cp out/bin/libv850.so ~/.binaryninja/plugins/libv850.so
+cp build/out/bin/libbn-v850-arch.so ~/.binaryninja/plugins/
 ```
 
 ## Usage
@@ -58,6 +60,37 @@ cp out/bin/libv850.so ~/.binaryninja/plugins/libv850.so
 To build with debug symbols, follow the instructions above to build from source but change the build type to debug:
 ```bash
 cmake -DCMAKE_BUILD_TYPE=debug -DHEADLESS=yes .
+```
+
+### Standalone Build
+The plugin can be built without modifying the binaryninja-api tree by pointing
+`BN_API_PATH` at an existing checkout:
+
+```bash
+cmake -DBN_API_PATH=/path/to/binaryninja-api \
+      -DCMAKE_BUILD_TYPE=release -DHEADLESS=yes -DBN_ALLOW_STUBS=ON \
+      -B build .
+cmake --build build -j --target bn-v850-arch
+```
+
+### Rosetta Test Harness
+A side-by-side disassembly comparison harness lives under `test/rosetta/`. It
+compiles C fixtures with the Renesas CC-RH compiler (requires a CC-RH Docker
+image), extracts instruction bytes from the resulting object, and diffs the
+plugin's disassembly output against the compiler's own assembly listing.
+
+To build the harness binary alongside the plugin:
+```bash
+cmake -DBN_API_PATH=/path/to/binaryninja-api \
+      -DBN_V850_BUILD_HARNESS=ON \
+      -DCMAKE_BUILD_TYPE=release -DHEADLESS=yes -DBN_ALLOW_STUBS=ON \
+      -B build .
+cmake --build build -j
+```
+
+To run against a fixture:
+```bash
+test/rosetta/run.sh test/rosetta/fixtures/smoke.c
 ```
 
 ### Contributing
@@ -82,6 +115,7 @@ Additionally, not all instructions have been lifted to LLIL. We welcome pull req
 ## Resources
 - [Binary Ninja API Documentation](https://api.binary.ninja/cpp/index.html)
 - [V850E1 Architecture Instruction Set Reference](https://www.renesas.com/en/document/mah/v850-familytm-architecture)
+- [RH850G3MH User's Manual: Software (R01US0143EJ0130)](https://www.renesas.com/en/document/man/rh850g3mh-users-manual-software-0)
 
 ## License
 Licensed under MIT.
@@ -90,6 +124,9 @@ See [LICENSE](LICENSE) file for details.
 
 ## Credits
 Please see the [NOTICE](NOTICE.txt) file for details.
+
+## Contributors
+- **[ghostdev137](https://github.com/ghostdev137)** — V850E3/RH850 G3MH lifter uplift: comprehensive overhaul bringing instruction coverage from ~8% to near-complete; SLEIGH parity pass porting ~43 opcodes from Ghidra's V850 SLEIGH spec; bug fixes for SAT flag stickiness, SCH/FPU intrinsics, MUL-imm, divide remainder ordering, and calling convention (CC-RH ABI); LD.DW/ST.DW 64-bit load/store lifting; rosetta test harness.
 
 ## Support
 If you encounter issues with this repository, please create an [issue](https://github.com/idaholab/bn-st10-arch/issues).

@@ -111,6 +111,8 @@ bool Format_Ext_Info(const uint64_t opcode, BN::InstructionInfo &result) {
     case Opcodes::OP_X_RETI:
     case Opcodes::OP_X_CTRET:
     case Opcodes::OP_X_DBRET:
+    case Opcodes::OP_X_EIRET:
+    case Opcodes::OP_X_FERET:
       result.AddBranch(FunctionReturn);
       result.length = Sizes::LEN32BIT;
       return true;
@@ -243,6 +245,16 @@ bool Reti::Info(const uint64_t opcode, const uint64_t addr,
   return Format_Ext_Info(opcode, result);
 }
 
+bool Eiret::Info(const uint64_t opcode, const uint64_t addr,
+                 BN::InstructionInfo &result) {
+  return Format_Ext_Info(opcode, result);
+}
+
+bool Feret::Info(const uint64_t opcode, const uint64_t addr,
+                 BN::InstructionInfo &result) {
+  return Format_Ext_Info(opcode, result);
+}
+
 bool SwitchR1::Info(const uint64_t opcode, const uint64_t addr,
                     BN::InstructionInfo &result) {
   result.AddBranch(UnresolvedBranch);
@@ -253,6 +265,56 @@ bool SwitchR1::Info(const uint64_t opcode, const uint64_t addr,
 bool Trap::Info(const uint64_t opcode, const uint64_t addr,
                 BN::InstructionInfo &result) {
   return Format_Ext_Info(opcode, result);
+}
+
+bool JarlR1R3::Info(const uint64_t opcode, const uint64_t addr,
+                    BN::InstructionInfo &result) {
+  result.AddBranch(CallDestination);
+  result.length = Sizes::LEN32BIT;
+  return true;
+}
+
+bool RieI::Info(const uint64_t opcode, const uint64_t addr,
+                BN::InstructionInfo &result) {
+  result.AddBranch(ExceptionBranch);
+  result.length = Sizes::LEN16BIT;
+  return true;
+}
+
+bool RieX::Info(const uint64_t opcode, const uint64_t addr,
+                BN::InstructionInfo &result) {
+  result.AddBranch(ExceptionBranch);
+  result.length = Sizes::LEN32BIT;
+  return true;
+}
+
+// LOOP reg1, disp16 — conditional backward branch. Target is computed
+// from the unsigned 15-bit field op1731 in hw2 bits [15:1]:
+//   target = addr - (op1731 << 1)   (always backward).
+bool LoopR1Disp16::Info(const uint64_t opcode, const uint64_t addr,
+                        BN::InstructionInfo &result) {
+  if (addr & 0b1) {
+    result.length = 1;
+    return false;
+  }
+  const uint16_t hw2 = static_cast<uint16_t>(opcode >> 16);
+  const uint16_t disp_field = static_cast<uint16_t>(
+      (hw2 & Opcodes::MASK_LOOP_DISP) >> Opcodes::SHIFT_LOOP_DISP);
+  const uint32_t target =
+      static_cast<uint32_t>(addr) - (static_cast<uint32_t>(disp_field) << 1);
+  result.AddBranch(TrueBranch, target);
+  result.AddBranch(FalseBranch, addr + Sizes::LEN32BIT);
+  result.length = Sizes::LEN32BIT;
+  return true;
+}
+
+bool Syscall::Info(const uint64_t /*opcode*/, const uint64_t /*addr*/,
+                   BN::InstructionInfo &result) {
+  // SYSCALL vectors through SCBP; treat as an unresolved call so BN
+  // ends the basic block and knows control transfers.
+  result.AddBranch(UnresolvedBranch);
+  result.length = Sizes::LEN32BIT;
+  return true;
 }
 
 }  // end namespace V850

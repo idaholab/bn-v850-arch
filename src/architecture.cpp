@@ -54,11 +54,16 @@ BNRegisterInfo V850Architecture::RegisterInfo(const uint32_t fullWidthReg,
 [[nodiscard]] std::string V850Architecture::GetRegisterName(
     const uint32_t rid) {
   /* note: register name mapping function is defined in util.cpp */
-  const char *result = RegToStr(rid);
-  if (result == nullptr) {
-    result = "GetRegisterName: INVALID_REG_ID";
+  if (rid <= Registers::R31) {
+    const char *result = RegToStr(static_cast<uint8_t>(rid));
+    if (result != nullptr) return result;
   }
-  return result;
+  /* RH850 banked system register handles (see registers.h). */
+  if (Registers::IsSysregHandle(rid)) {
+    const char *result = SysregHandleToStr(rid);
+    if (result != nullptr) return result;
+  }
+  return "GetRegisterName: INVALID_REG_ID";
 }
 
 [[nodiscard]] uint32_t V850Architecture::GetLinkRegister() {
@@ -133,7 +138,7 @@ V850E1Architecture::V850E1Architecture(const std::string &name)
 }
 
 std::vector<uint32_t> V850E1Architecture::GetAllRegisters() {
-  return std::vector<uint32_t>{
+  std::vector<uint32_t> regs{
       Registers::R0,  Registers::R1,  Registers::R2,
       Registers::SP,  Registers::R4,  Registers::R5,
       Registers::R6,  Registers::R7,  Registers::R8,
@@ -144,20 +149,39 @@ std::vector<uint32_t> V850E1Architecture::GetAllRegisters() {
       Registers::R21, Registers::R22, Registers::R23,
       Registers::R24, Registers::R25, Registers::R26,
       Registers::R27, Registers::R28, Registers::R29,
-      Registers::EP,  Registers::R31
-      /* NOTE: system registers are represented using a base address and
-         offset */
-  };
+      Registers::EP,  Registers::R31,
+      Registers::FPSR};
+
+  /* Advertise the full banked system register file (selID 0..7 x regID
+   * 0..31) so stsr/ldsr lifts can emit il.Register / il.SetRegister on
+   * any documented (regID, selID) pair without producing INVALID_REG_ID
+   * warnings. Names for undocumented banks fall back to sr<r>_<s> via
+   * util::SystemRegToStrBanked. selID > 7 is reserved on G3MH and is
+   * omitted to avoid polluting Binary Ninja's register view. */
+  for (uint8_t selID = 0; selID <= 7; ++selID) {
+    for (uint8_t regID = 0; regID <= 31; ++regID) {
+      regs.push_back(Registers::SysregHandle(regID, selID));
+    }
+  }
+  return regs;
 }
 
 BNRegisterInfo V850E1Architecture::GetRegisterInfo(const uint32_t rid) {
-  std::vector<uint32_t> registers = GetAllRegisters();
   if (rid <= Registers::R31) {
     return RegisterInfo(rid, 0,
                         Sizes::LEN32BIT);  // struct contains: full width reg,
     // offset (for sub-registers), size
   }
-  // TODO, also add support for float regs
+  if (Registers::IsSysregHandle(rid)) {
+    /* Banked system registers are 32-bit, no sub-register aliasing. Each
+     * (regID, selID) is its own full-width register. */
+    return RegisterInfo(rid, 0, Sizes::LEN32BIT);
+  }
+  if (rid == Registers::FPSR) {
+    return RegisterInfo(Registers::FPSR, 0, Sizes::LEN32BIT);
+  }
+  // G3MH §3.4.1: FPU reuses the r0..r31 GPR file; no separate FR* register
+  // bank exists. Unknown rids are truly invalid.
   return RegisterInfo(0, 0, 0);
 }
 
@@ -192,7 +216,10 @@ BNFlagRole V850E1Architecture::GetFlagRole(const uint32_t flag,
       return OverflowFlagRole;
     case Flags::FLAG_CY_CARRY:
       return CarryFlagRole;
-    // TODO define all the SpecialFlagRole roles
+    // SAT is sticky/cumulative (G3MH §7); ID/EP/NP are PSW state bits used
+    // by exception machinery. None have a standard BN flag role — all four
+    // intentionally fall through to SpecialFlagRole so BN treats them as
+    // opaque side-effects that lifts must read/write explicitly.
     case Flags::FLAG_SAT_SATURATED:
     case Flags::FLAG_ID_INTERRUPT_DISABLE:
     case Flags::FLAG_EP_EXCEPTION_PENDING:
@@ -271,8 +298,10 @@ std::vector<uint32_t> V850E1Architecture::GetFlagsRequiredForFlagCondition(
     case LLFC_SGT:
       return std::vector<uint32_t>{Flags::FLAG_Z_ZERO, Flags::FLAG_S_SIGN,
                                    Flags::FLAG_OV_OVERFLOW};
-    // TODO how deal with SAT?
-    // TODO float comparisons. Are these flags even needed?
+    // BSa / NSa (branch-if-SAT) are emitted via CONDITION_CODE_SA and lifted
+    // directly in util.cpp as a Flag() compare — no LLFC_* mapping needed.
+    // Float comparisons are lifted via the v850.cmpf.s intrinsic which
+    // updates FPSR; BN's LLFC_F* paths are unused.
     case LLFC_FE:
     case LLFC_FNE:
     case LLFC_FLT:
@@ -286,15 +315,216 @@ std::vector<uint32_t> V850E1Architecture::GetFlagsRequiredForFlagCondition(
   }
 }
 
-class V850E1CallingConvention final : public BN::CallingConvention {
+/* ------------------------------------------------------------------------- *
+ *  FPU intrinsic scaffolding.
+ *  Binary Ninja has no native LLIL primitive for:
+ *    - max/min float
+ *    - reciprocal / reciprocal-square-root approximation
+ *    - fused multiply-add family (fmaf / fmsf / fnmaf / fnmsf)
+ *    - half-precision cvt
+ *    - unsigned-int <-> float cvt
+ *    - floor/ceil/trunc/round with rounding mode other than current
+ *    - IEEE754 compare writing to FPSR CC bits
+ *    - FPSR -> PSW.Z transfer
+ *  We emit these as Architecture intrinsics so BN displays them as named
+ *  function calls in the decompiler.
+ * ------------------------------------------------------------------------- */
+std::vector<uint32_t> V850E1Architecture::GetAllIntrinsics() {
+  std::vector<uint32_t> out;
+  for (uint32_t i = FpuIntrinsic::MaxfS; i < FpuIntrinsic::_END; ++i) {
+    out.push_back(i);
+  }
+  for (uint32_t i = BitIntrinsic::Sch0l; i < BitIntrinsic::_END; ++i) {
+    out.push_back(i);
+  }
+  for (uint32_t i = CacheIntrinsic::Cache; i < CacheIntrinsic::_END; ++i) {
+    out.push_back(i);
+  }
+  for (uint32_t i = SystemIntrinsic::Syscall; i < SystemIntrinsic::_END; ++i) {
+    out.push_back(i);
+  }
+  return out;
+}
+
+std::string V850E1Architecture::GetIntrinsicName(const uint32_t intrinsic) {
+  switch (intrinsic) {
+    case FpuIntrinsic::MaxfS:     return "v850.maxf.s";
+    case FpuIntrinsic::MinfS:     return "v850.minf.s";
+    case FpuIntrinsic::RecipfS:   return "v850.recipf.s";
+    case FpuIntrinsic::RsqrtfS:   return "v850.rsqrtf.s";
+    case FpuIntrinsic::RoundfSw:  return "v850.roundf.sw";
+    case FpuIntrinsic::CeilfSw:   return "v850.ceilf.sw";
+    case FpuIntrinsic::FloorfSw:  return "v850.floorf.sw";
+    case FpuIntrinsic::RoundfSuw: return "v850.roundf.suw";
+    case FpuIntrinsic::TrncfSuw:  return "v850.trncf.suw";
+    case FpuIntrinsic::CeilfSuw:  return "v850.ceilf.suw";
+    case FpuIntrinsic::FloorfSuw: return "v850.floorf.suw";
+    case FpuIntrinsic::CvtfSuw:   return "v850.cvtf.suw";
+    case FpuIntrinsic::CvtfUws:   return "v850.cvtf.uws";
+    case FpuIntrinsic::CvtfHs:    return "v850.cvtf.hs";
+    case FpuIntrinsic::CvtfSh:    return "v850.cvtf.sh";
+    case FpuIntrinsic::FmafS:     return "v850.fmaf.s";
+    case FpuIntrinsic::FmsfS:     return "v850.fmsf.s";
+    case FpuIntrinsic::FnmafS:    return "v850.fnmaf.s";
+    case FpuIntrinsic::FnmsfS:    return "v850.fnmsf.s";
+    case FpuIntrinsic::CmpfS:     return "v850.cmpf.s";
+    case FpuIntrinsic::Trfsr:     return "v850.trfsr";
+    case FpuIntrinsic::FpuD:      return "v850.fpud";
+    case BitIntrinsic::Sch0l:     return "v850.sch0l";
+    case BitIntrinsic::Sch0r:     return "v850.sch0r";
+    case BitIntrinsic::Sch1l:     return "v850.sch1l";
+    case BitIntrinsic::Sch1r:     return "v850.sch1r";
+    case CacheIntrinsic::Cache:   return "v850.cache";
+    case SystemIntrinsic::Syscall:  return "v850.syscall";
+    case SystemIntrinsic::Dbcp:     return "v850.dbcp";
+    case SystemIntrinsic::Dbhvtrap: return "v850.dbhvtrap";
+    case SystemIntrinsic::Dbpush:   return "v850.dbpush";
+    case SystemIntrinsic::Dbtag:    return "v850.dbtag";
+    case SystemIntrinsic::Est:      return "v850.est";
+    case SystemIntrinsic::Tlbai:    return "v850.tlbai";
+    case SystemIntrinsic::Tlbr:     return "v850.tlbr";
+    case SystemIntrinsic::Tlbs:     return "v850.tlbs";
+    case SystemIntrinsic::Tlbvi:    return "v850.tlbvi";
+    case SystemIntrinsic::Tlbw:     return "v850.tlbw";
+    default:                      return "";
+  }
+}
+
+std::vector<BN::NameAndType> V850E1Architecture::GetIntrinsicInputs(
+    const uint32_t intrinsic) {
+  const auto f32 = BN::Type::FloatType(4);
+  const auto u32 = BN::Type::IntegerType(4, false);
+  switch (intrinsic) {
+    case FpuIntrinsic::MaxfS:
+    case FpuIntrinsic::MinfS:
+      return {{"a", f32}, {"b", f32}};
+    case FpuIntrinsic::RecipfS:
+    case FpuIntrinsic::RsqrtfS:
+    case FpuIntrinsic::RoundfSw:
+    case FpuIntrinsic::CeilfSw:
+    case FpuIntrinsic::FloorfSw:
+    case FpuIntrinsic::RoundfSuw:
+    case FpuIntrinsic::TrncfSuw:
+    case FpuIntrinsic::CeilfSuw:
+    case FpuIntrinsic::FloorfSuw:
+    case FpuIntrinsic::CvtfSuw:
+    case FpuIntrinsic::CvtfSh:
+      return {{"a", f32}};
+    case FpuIntrinsic::CvtfUws:
+      return {{"a", u32}};
+    case FpuIntrinsic::CvtfHs:
+      return {{"half", u32}};  // half packed in low 16 bits of a GPR
+    case FpuIntrinsic::FmafS:
+    case FpuIntrinsic::FmsfS:
+    case FpuIntrinsic::FnmafS:
+    case FpuIntrinsic::FnmsfS:
+      return {{"a", f32}, {"b", f32}, {"c", f32}};
+    case FpuIntrinsic::CmpfS:
+      return {{"fcond", u32}, {"a", f32}, {"b", f32}, {"fcbit", u32}};
+    case FpuIntrinsic::Trfsr:
+      return {{"fcbit", u32}, {"fpsr", u32}};
+    case FpuIntrinsic::FpuD:
+      // Generic double-precision op: two source GPRs (typically the lower
+      // halves of register pairs) feeding an opaque FPU.D result.
+      return {{"a", u32}, {"b", u32}};
+    case BitIntrinsic::Sch0l:
+    case BitIntrinsic::Sch0r:
+    case BitIntrinsic::Sch1l:
+    case BitIntrinsic::Sch1r:
+      return {{"value", u32}};
+    case CacheIntrinsic::Cache:
+      return {{"cacheop", u32}, {"ea", u32}};
+    case SystemIntrinsic::Syscall:
+      return {{"vector", u32}};
+    case SystemIntrinsic::Dbtag:
+      return {{"imm10", u32}};
+    case SystemIntrinsic::Dbpush:
+      // Debug push range: first/last GPR in the range, modeled opaquely.
+      return {{"first", u32}, {"last", u32}};
+    case SystemIntrinsic::Dbcp:
+    case SystemIntrinsic::Dbhvtrap:
+    case SystemIntrinsic::Est:
+    case SystemIntrinsic::Tlbai:
+    case SystemIntrinsic::Tlbr:
+    case SystemIntrinsic::Tlbs:
+    case SystemIntrinsic::Tlbvi:
+    case SystemIntrinsic::Tlbw:
+      return {};
+    default:
+      return {};
+  }
+}
+
+std::vector<BN::Confidence<BN::Ref<BN::Type>>>
+V850E1Architecture::GetIntrinsicOutputs(const uint32_t intrinsic) {
+  const auto f32 = BN::Type::FloatType(4);
+  const auto u32 = BN::Type::IntegerType(4, false);
+  switch (intrinsic) {
+    case FpuIntrinsic::MaxfS:
+    case FpuIntrinsic::MinfS:
+    case FpuIntrinsic::RecipfS:
+    case FpuIntrinsic::RsqrtfS:
+    case FpuIntrinsic::FmafS:
+    case FpuIntrinsic::FmsfS:
+    case FpuIntrinsic::FnmafS:
+    case FpuIntrinsic::FnmsfS:
+    case FpuIntrinsic::CvtfUws:
+    case FpuIntrinsic::CvtfHs:
+      return {BN::Confidence<BN::Ref<BN::Type>>(f32)};
+    case FpuIntrinsic::RoundfSw:
+    case FpuIntrinsic::CeilfSw:
+    case FpuIntrinsic::FloorfSw:
+      return {BN::Confidence<BN::Ref<BN::Type>>(BN::Type::IntegerType(4, true))};
+    case FpuIntrinsic::RoundfSuw:
+    case FpuIntrinsic::TrncfSuw:
+    case FpuIntrinsic::CeilfSuw:
+    case FpuIntrinsic::FloorfSuw:
+    case FpuIntrinsic::CvtfSuw:
+    case FpuIntrinsic::CvtfSh:
+      return {BN::Confidence<BN::Ref<BN::Type>>(u32)};
+    case FpuIntrinsic::CmpfS:
+      return {BN::Confidence<BN::Ref<BN::Type>>(u32)};  // updated FPSR
+    case FpuIntrinsic::Trfsr:
+      return {};  // writes PSW.Z side-effect; modelled via flag write in lift
+    case FpuIntrinsic::FpuD:
+      return {BN::Confidence<BN::Ref<BN::Type>>(u32)};  // opaque result
+    case BitIntrinsic::Sch0l:
+    case BitIntrinsic::Sch0r:
+    case BitIntrinsic::Sch1l:
+    case BitIntrinsic::Sch1r:
+      return {BN::Confidence<BN::Ref<BN::Type>>(u32)};  // position + 1, or 0
+    default:
+      return {};
+  }
+}
+
+/*
+ * CC-RH (Renesas) calling convention for V850 / RH850.
+ *
+ * Reference: CC-RH Compiler User's Manual (R20UT3516EJ). Summary:
+ *   - Integer argument registers: r6, r7, r8, r9 (first 4 args; rest on stack)
+ *   - Integer return value: r10 (low) / r11 (high, for 64-bit)
+ *   - Stack pointer: r3 (SP)
+ *   - Global pointer: r4 (GP)
+ *   - Text pointer / small-data pointer: r5 (TP)
+ *   - Element pointer: r30 (EP)
+ *   - Link register: r31 (LP) - caller-saved (holds return address)
+ *   - Caller-saved (scratch): r1, r5, r10-r17, r31
+ *   - Callee-saved (preserved across calls): r20-r29
+ *   - r2 is reserved/RTOS-use; not tracked as either.
+ *
+ * Registering this as the default fixes bogus decompiler signatures
+ * (previously BN assumed every register was an input, producing 20+ args).
+ */
+class V850CCRHCallingConvention final : public BN::CallingConvention {
  public:
-  explicit V850E1CallingConvention(BN::Architecture *arch)
-      : CallingConvention(arch, "V850E1") {}
+  explicit V850CCRHCallingConvention(BN::Architecture *arch)
+      : CallingConvention(arch, "cc-rh") {}
 
   uint32_t GetGlobalPointerRegister() override { return Registers::R4; }
 
   std::vector<uint32_t> GetIntegerArgumentRegisters() override {
-    return std::vector<uint32_t>{Registers::R6, Registers::R7, Registers::R9,
+    return std::vector<uint32_t>{Registers::R6, Registers::R7, Registers::R8,
                                  Registers::R9};
   }
 
@@ -304,32 +534,53 @@ class V850E1CallingConvention final : public BN::CallingConvention {
     return Registers::R11;
   }
 
+  std::vector<uint32_t> GetCallerSavedRegisters() override {
+    return std::vector<uint32_t>{
+        Registers::R1,  Registers::R5,  Registers::R10, Registers::R11,
+        Registers::R12, Registers::R13, Registers::R14, Registers::R15,
+        Registers::R16, Registers::R17, Registers::R31};
+  }
+
   std::vector<uint32_t> GetCalleeSavedRegisters() override {
     return std::vector<uint32_t>{
         Registers::R20, Registers::R21, Registers::R22, Registers::R23,
         Registers::R24, Registers::R25, Registers::R26, Registers::R27,
-        Registers::R28, Registers::R29, Registers::EP,  Registers::R31};
-  }
-
-  std::vector<uint32_t> GetCallerSavedRegisters() override {
-    return std::vector<uint32_t>{Registers::R10, Registers::R11, Registers::R12,
-                                 Registers::R13, Registers::R14, Registers::R15,
-                                 Registers::R16, Registers::R17, Registers::R18,
-                                 Registers::R19};
+        Registers::R28, Registers::R29};
   }
 };
 }  // namespace V850
 
 extern "C" {
 BN_DECLARE_CORE_ABI_VERSION
+
+// Ensure view_elf / view_macho / view_pe plugins initialize before we run
+// CorePluginInit; without this, BinaryViewType::RegisterArchitecture("ELF",
+// ...) silently no-ops because the "ELF" BinaryViewType isn't registered
+// yet, and BN's ELF loader falls back to armv7 on e_machine=36 (V800).
+BINARYNINJAPLUGIN void CorePluginDependencies() {
+  BN::AddOptionalPluginDependency("view_elf");
+  BN::AddOptionalPluginDependency("view_macho");
+  BN::AddOptionalPluginDependency("view_pe");
+}
+
 BINARYNINJAPLUGIN bool CorePluginInit() {
   BN::Architecture *V850E1 = new V850::V850E1Architecture("V850");
   BN::Architecture::Register(V850E1);
 
   const BN::Ref<BN::CallingConvention> cc =
-      new V850::V850E1CallingConvention(V850E1);
+      new V850::V850CCRHCallingConvention(V850E1);
   V850E1->RegisterCallingConvention(cc);
   V850E1->SetDefaultCallingConvention(cc);
+
+  // Bind the ELF loader's e_machine=36 (EM_V800, NEC V800/V850) to our arch
+  // so BN stops silently falling back to armv7 on V850 ELFs (which also
+  // rewrites the p_vaddr mappings). Use the architecture's own standalone
+  // platform so ELFs load with a sensible default.
+  constexpr uint32_t EM_V800 = 36;
+  BN::BinaryViewType::RegisterArchitecture("ELF", EM_V800, LittleEndian,
+                                           V850E1);
+  BN::BinaryViewType::RegisterPlatform("ELF", EM_V800,
+                                       V850E1->GetStandalonePlatform());
 
   return true;
 }
